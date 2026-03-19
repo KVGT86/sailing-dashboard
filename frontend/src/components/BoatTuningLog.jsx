@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import SailTracker from './SailTracker';
-import { API_BASE_URL } from '../config';
+import { API_URL } from '../config';
 
 export default function BoatTuningLog({ activeCrew }) {
   const [formData, setFormData] = useState({
@@ -18,7 +18,7 @@ export default function BoatTuningLog({ activeCrew }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_BASE_URL}/tuning`, { 
+      await axios.post(`${API_URL}/tuning`, { 
         ...formData, 
         crewWeight: activeCrew.reduce((sum, s) => sum + s.weightKg, 0) 
       });
