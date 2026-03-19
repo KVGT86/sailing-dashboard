@@ -1,0 +1,9 @@
+{
+  "telemetry": [],
+  "tuning": [],
+  "sails": [
+    { "id": "J1-104", "type": "Jib", "name": "North J2-A (Race)", "hours": 0, "heavyHours": 0, "status": "New" },
+    { "id": "J1-99", "type": "Jib", "name": "North J2-B (Practice)", "hours": 42, "heavyHours": 12, "status": "Worn" },
+    { "id": "M-1381", "type": "Main", "name": "North M1 Cross-Cut", "hours": 15, "heavyHours": 2, "status": "Good" }
+  ]
+}

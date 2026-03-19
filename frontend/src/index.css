@@ -1,0 +1,171 @@
+/* Import Modern Racing Typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --lightfoot-navy: #1D1B44;
+  --lightfoot-red: #ED1C24;
+  --lightfoot-white: #FFFFFF;
+  --lightfoot-bg: #F1F5F9;
+  --lightfoot-border: rgba(29, 27, 68, 0.1);
+}
+
+/* --- Global Base Styles --- */
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--lightfoot-bg);
+  color: var(--lightfoot-navy);
+  margin: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Custom Scrollbar (Sleek Navy) --- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #E2E8F0;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--lightfoot-navy);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lightfoot-red);
+}
+
+/* --- Global Card Styling --- */
+.bg-white {
+  background: var(--lightfoot-white) !important;
+  border: 1px solid var(--lightfoot-border) !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* --- Form Elements --- */
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
+  background-color: var(--lightfoot-white);
+  border: 1.5px solid #CBD5E1 !important;
+  border-radius: 8px !important;
+  padding: 0.6rem 0.8rem !important;
+  font-weight: 500;
+  color: var(--lightfoot-navy);
+  transition: all 0.2s ease;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--lightfoot-red) !important;
+  box-shadow: 0 0 0 3px rgba(237, 28, 36, 0.15) !important;
+}
+
+/* Custom Range/Slider Styling */
+input[type="range"] {
+  accent-color: var(--lightfoot-red);
+  height: 6px;
+}
+
+/* --- Buttons --- */
+button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:active {
+  transform: scale(0.96);
+}
+
+/* Primary Action Buttons */
+button[type="submit"], 
+.btn-primary {
+  background-color: var(--lightfoot-red) !important;
+  color: white !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: none;
+  box-shadow: 0 4px 0px 0px #B91C1C; /* Darker red "3D" effect */
+}
+
+button[type="submit"]:hover,
+.btn-primary:hover {
+  background-color: #D71921 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 0px 0px #B91C1C;
+}
+
+/* --- Navigation & Tabs --- */
+nav {
+  background-color: var(--lightfoot-navy) !important;
+  border-bottom: 4px solid var(--lightfoot-red);
+}
+
+.nav-link-active {
+  color: var(--lightfoot-red) !important;
+  border-bottom: 2px solid var(--lightfoot-red);
+}
+
+/* --- Recharts Overrides --- */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #E2E8F0;
+}
+
+.recharts-default-tooltip {
+  background-color: var(--lightfoot-navy) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  color: white !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* --- Table Styling --- */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+thead th {
+  background-color: var(--lightfoot-navy);
+  color: white;
+  padding: 12px;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+}
+
+tbody tr {
+  background-color: white;
+  transition: background-color 0.2s;
+}
+
+tbody tr:hover {
+  background-color: #F8FAFC;
+}
+
+tbody td {
+  padding: 12px;
+  border-top: 1px solid var(--lightfoot-border);
+  border-bottom: 1px solid var(--lightfoot-border);
+}
+
+tbody td:first-child {
+  border-left: 1px solid var(--lightfoot-border);
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+tbody td:last-child {
+  border-right: 1px solid var(--lightfoot-border);
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
