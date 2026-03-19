@@ -103,14 +103,14 @@ app.get('/api/athletes', async (req, res) => {
 });
 
 app.post('/api/athletes', async (req, res) => {
-  const { name, weight_kg, height_cm, rhr, max_hr, vo2max } = req.body;
+  const { name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat } = req.body;
   try {
     await pool.query(`
-      INSERT INTO athlete_profiles (name, weight_kg, height_cm, rhr, max_hr, vo2max)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO athlete_profiles (name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (name) DO UPDATE SET 
-        weight_kg = $2, height_cm = $3, rhr = $4, max_hr = $5, vo2max = $6
-    `, [name, weight_kg, height_cm, rhr, max_hr, vo2max]);
+        weight_kg = $2, height_cm = $3, rhr = $4, max_hr = $5, vo2max = $6, on_boat = $7
+    `, [name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat]);
     res.sendStatus(200);
   } catch (err) { res.status(500).send(err.message); }
 });
