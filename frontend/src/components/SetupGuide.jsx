@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import { API_URL } from '../config';
 
 export default function SetupGuide({ activeCrew }) {
   const [guideData, setGuideData] = useState([]);
