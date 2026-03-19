@@ -34,49 +34,54 @@ export default function App() {
 
   return (
     <div className="bg-slate-100 min-h-screen pb-10">
-      {/* HEADER: Lightfoot Navy Background with Red Bottom Border */}
-      <nav className="bg-[#1D1B44] text-white p-4 shadow-lg flex justify-between items-center border-b-4 border-[#ED1C24]">
+      {/* HEADER: Updated with z-50 and Mobile-Friendly Navigation */}
+      <nav className="relative z-50 bg-[#1D1B44] text-white p-4 shadow-lg flex flex-col md:flex-row justify-between items-center border-b-4 border-[#ED1C24] gap-4">
         <div className="flex items-center space-x-4">
           <img 
             src="/logo.png" 
             alt="Lightfoot Logo" 
-            className="h-12 w-auto bg-transparent rounded p-1" 
+            className="h-10 md:h-12 w-auto bg-transparent rounded p-1" 
             onError={(e) => e.target.style.display = 'none'} 
           />
-          <h1 className="text-2xl font-black tracking-tighter uppercase italic">Lightfoot Racing</h1>
+          <h1 className="text-xl md:text-2xl font-black tracking-tighter uppercase italic">Lightfoot Racing</h1>
         </div>
         
-        {/* Navigation Tabs */}
-        <div className="space-x-6 text-sm font-bold uppercase tracking-widest hidden md:flex">
+        {/* Navigation Tabs - FIXED FOR MOBILE (removed hidden md:flex) */}
+        <div className="flex flex-wrap justify-center gap-3 md:gap-6 text-[10px] md:text-sm font-bold uppercase tracking-widest">
           <button 
+            type="button"
             onClick={() => setActiveTab('dashboard')} 
-            className={activeTab === 'dashboard' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24] pb-1' : 'hover:text-red-400 transition-colors'}
+            className={`pb-1 transition-colors touch-manipulation ${activeTab === 'dashboard' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24]' : 'text-gray-300 hover:text-white'}`}
           >
             Athletes
           </button>
           <button 
+            type="button"
             onClick={() => setActiveTab('tuning')} 
-            className={activeTab === 'tuning' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24] pb-1' : 'hover:text-red-400 transition-colors'}
+            className={`pb-1 transition-colors touch-manipulation ${activeTab === 'tuning' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24]' : 'text-gray-300 hover:text-white'}`}
           >
-            Boat & Log
+            Log
           </button>
           <button 
+            type="button"
             onClick={() => setActiveTab('guide')} 
-            className={activeTab === 'guide' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24] pb-1' : 'hover:text-red-400 transition-colors'}
+            className={`pb-1 transition-colors touch-manipulation ${activeTab === 'guide' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24]' : 'text-gray-300 hover:text-white'}`}
           >
-            Setup Guide
+            Guide
           </button>
           <button 
+            type="button"
             onClick={() => setActiveTab('weather')} 
-            className={activeTab === 'weather' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24] pb-1' : 'hover:text-red-400 transition-colors'}
+            className={`pb-1 transition-colors touch-manipulation ${activeTab === 'weather' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24]' : 'text-gray-300 hover:text-white'}`}
           >
-            Live Weather
+            Weather
           </button>
           <button 
+            type="button"
             onClick={() => setActiveTab('tides')} 
-            className={activeTab === 'tides' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24] pb-1' : 'hover:text-red-400 transition-colors'}
+            className={`pb-1 transition-colors touch-manipulation ${activeTab === 'tides' ? 'text-[#ED1C24] border-b-2 border-[#ED1C24]' : 'text-gray-300 hover:text-white'}`}
           >
-            Solent Tides
+            Tides
           </button>
         </div>
       </nav>
@@ -90,21 +95,20 @@ export default function App() {
               <button 
                 key={sailor.id} 
                 onClick={() => toggleBoatAssignment(sailor.id)}
-                className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-200 shadow-sm ${
+                className={`px-3 py-2 md:px-4 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-wider transition-all duration-200 shadow-sm ${
                   sailor.onBoat 
                   ? 'bg-[#ED1C24] text-white ring-2 ring-red-200' 
                   : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                 }`}
               >
-                {sailor.name} {sailor.onBoat && '✓'}
+                {sailor.name.split(' ')[0]} {sailor.onBoat && '✓'}
               </button>
             ))}
           </div>
           
-          {/* Athlete Profile Selector (Visible only on Dashboard Tab) */}
           {activeTab === 'dashboard' && (
             <div className="flex items-center space-x-3">
-              <span className="text-xs font-black uppercase text-slate-500">Focus Profile:</span>
+              <span className="text-xs font-black uppercase text-slate-500">Focus:</span>
               <select 
                 className="border-2 border-slate-200 rounded-md p-2 text-sm font-bold text-[#1D1B44] bg-slate-50 focus:border-[#ED1C24] outline-none" 
                 value={selectedSailorId} 
@@ -118,40 +122,18 @@ export default function App() {
           )}
         </div>
 
-        {/* --- DYNAMIC TAB ROUTING --- */}
+        {/* Dynamic Tab Routing */}
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {activeTab === 'dashboard' && (
-            <AthleteDashboard 
-              sailor={currentSailor} 
-              updateProfile={updateSailorProfile} 
-            />
-          )}
-          
-          {activeTab === 'tuning' && (
-            <BoatTuningLog 
-              activeCrew={activeCrew} 
-            />
-          )}
-          
-          {activeTab === 'guide' && (
-            <SetupGuide 
-              activeCrew={activeCrew} 
-            />
-          )}
-          
-          {activeTab === 'weather' && (
-            <LiveConditions />
-          )}
-          
-          {activeTab === 'tides' && (
-            <SolentTidesModule />
-          )}
+          {activeTab === 'dashboard' && <AthleteDashboard sailor={currentSailor} updateProfile={updateSailorProfile} />}
+          {activeTab === 'tuning' && <BoatTuningLog activeCrew={activeCrew} />}
+          {activeTab === 'guide' && <SetupGuide activeCrew={activeCrew} />}
+          {activeTab === 'weather' && <LiveConditions />}
+          {activeTab === 'tides' && <SolentTidesModule />}
         </div>
       </main>
       
-      {/* Footer Branding */}
-      <footer className="container mx-auto mt-12 text-center">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
+      <footer className="container mx-auto mt-12 mb-8 text-center px-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
           GBR 1381 Lightfoot Performance Systems
         </p>
       </footer>
