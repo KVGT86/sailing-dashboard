@@ -108,7 +108,16 @@ app.get('/api/athletes', async (req, res) => {
 });
 
 app.post('/api/athletes', async (req, res) => {
-  const { id, name, weight_kg, height_cm, rhr, max_hr, vo2max } = req.body;
+  // Destructure all possible names coming from the frontend
+  const { 
+    id, name, 
+    weight_kg, weightKg, 
+    height_cm, heightCm, 
+    rhr, 
+    max_hr, maxHr, 
+    vo2max 
+  } = req.body;
+
   try {
     const query = `
       INSERT INTO athlete_profiles (id, name, weight_kg, height_cm, rhr, max_hr, vo2max)
@@ -116,9 +125,22 @@ app.post('/api/athletes', async (req, res) => {
       ON CONFLICT (id) DO UPDATE SET 
         weight_kg = $3, height_cm = $4, rhr = $5, max_hr = $6, vo2max = $7
     `;
-    await pool.query(query, [id, name, weight_kg, height_cm, rhr, max_hr, vo2max]);
+    
+    // Use logical OR (||) to ensure we don't send 'undefined' to Postgres
+    await pool.query(query, [
+      id, 
+      name, 
+      weight_kg || weightKg || 0, 
+      height_cm || heightCm || 0, 
+      rhr || 60, 
+      max_hr || maxHr || 190, 
+      vo2max || 50
+    ]);
     res.sendStatus(200);
-  } catch (err) { res.status(500).send(err.message); }
+  } catch (err) {
+    console.error("❌ DB Insert Error:", err.message);
+    res.status(500).send(err.message);
+  }
 });
 
 // 2. SESSION LOGS (Auto-updates Sail Hours)
