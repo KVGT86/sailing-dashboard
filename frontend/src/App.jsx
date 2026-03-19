@@ -31,10 +31,24 @@ export default function App() {
   const addSailor = async () => {
     const name = prompt("Enter New Sailor Name:");
     if (!name) return;
-    const newId = Date.now(); // Simple unique ID
-    const newSailor = { id: newId, name, weight_kg: 80, height_cm: 180, rhr: 60, max_hr: 190, vo2max: 50 };
-    await axios.post(`${API_URL}/athletes`, newSailor);
-    fetchCrew();
+
+    // REMOVE: const newId = Date.now(); 
+    
+    const newSailor = { 
+      name, // The database uses this to identify the person
+      weight_kg: 80, 
+      height_cm: 180, 
+      rhr: 60, 
+      max_hr: 190, 
+      vo2max: 50 
+    };
+
+    try {
+      await axios.post(`${API_URL}/athletes`, newSailor);
+      fetchCrew(); // Refresh the list from the DB
+    } catch (error) {
+      alert("Error adding sailor. Name might already exist.");
+    }
   };
 
   const deleteSailor = async (id) => {

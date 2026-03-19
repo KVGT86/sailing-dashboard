@@ -35,9 +35,9 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
     try {
       // Fetches the saved telemetry from Postgres
       const response = await axios.get(`${API_URL}/history`);
-      // Filter for this specific sailor's logs
+      // Filter for this specific sailor's logs using name or ID
       const sailorHistory = response.data
-        .filter(log => log.sailor_id === sailor.id || log.sailorId === sailor.id)
+        .filter(log => log.sailor_id === sailor.id || log.sailorName === sailor.name)
         .map(log => ({ 
           ...log, 
           date: new Date(log.date || log.timestamp).toLocaleDateString() 
@@ -53,7 +53,7 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
     setLoading(true);
     try {
       const payload = {
-        id: sailor.id,
+        // We rely on 'name' for the ON CONFLICT update in the backend
         name: sailor.name,
         weight_kg: Number(profileForm.weight_kg),
         height_cm: Number(profileForm.height_cm),
@@ -69,7 +69,8 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
       setIsEditing(false);
       alert("Profile synced to GBR 1381 Cloud");
     } catch (error) {
-      alert("Sync failed. Check backend connection.");
+      console.error("Save error:", error);
+      alert("Sync failed. Check database connection.");
     } finally {
       setLoading(false);
     }
@@ -79,7 +80,7 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
     e.preventDefault();
     try {
       // Saves Garmin/RPE data to the tuning_logs table as a "Session"
-      await axios.post(`${API_BASE_URL}/tuning`, { 
+      await axios.post(`${API_URL}/tuning`, { 
         date: new Date().toISOString().split('T')[0],
         sailorId: sailor.id,
         sailorName: sailor.name,
@@ -97,8 +98,8 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
 
   // --- KARVONEN HEART RATE ZONES CALCULATION ---
   const calculateHRZones = () => {
-    const currentRhr = profileForm.rhr;
-    const currentMax = profileForm.max_hr;
+    const currentRhr = Number(profileForm.rhr);
+    const currentMax = Number(profileForm.max_hr);
     if (!currentRhr || !currentMax) return null;
     
     const hrr = currentMax - currentRhr;
@@ -133,38 +134,38 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase">Weight (kg)</label>
-                    <input type="number" step="0.1" value={profileForm.weight_kg} onChange={e => setProfileForm({...profileForm, weight_kg: e.target.value})} className="w-full mt-1 font-bold" required />
+                    <input type="number" step="0.1" value={profileForm.weight_kg} onChange={e => setProfileForm({...profileForm, weight_kg: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" required />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase">Height (cm)</label>
-                    <input type="number" value={profileForm.height_cm} onChange={e => setProfileForm({...profileForm, height_cm: e.target.value})} className="w-full mt-1 font-bold" required />
+                    <input type="number" value={profileForm.height_cm} onChange={e => setProfileForm({...profileForm, height_cm: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" required />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase">Resting HR</label>
-                    <input type="number" value={profileForm.rhr} onChange={e => setProfileForm({...profileForm, rhr: e.target.value})} className="w-full mt-1 font-bold" required />
+                    <input type="number" value={profileForm.rhr} onChange={e => setProfileForm({...profileForm, rhr: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" required />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase">Max HR</label>
-                    <input type="number" value={profileForm.max_hr} onChange={e => setProfileForm({...profileForm, max_hr: e.target.value})} className="w-full mt-1 font-bold" required />
+                    <input type="number" value={profileForm.max_hr} onChange={e => setProfileForm({...profileForm, max_hr: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" required />
                   </div>
                   <div className="col-span-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase">VO2 Max</label>
-                    <input type="number" value={profileForm.vo2max} onChange={e => setProfileForm({...profileForm, vo2max: e.target.value})} className="w-full mt-1 font-bold border-red-200" required />
+                    <input type="number" step="0.1" value={profileForm.vo2max} onChange={e => setProfileForm({...profileForm, vo2max: e.target.value})} className="w-full mt-1 font-bold border-red-200 border rounded p-1" required />
                   </div>
                </div>
-               <button type="submit" className="w-full bg-[#ED1C24] text-white p-3 rounded font-black uppercase tracking-widest hover:bg-[#1D1B44] transition-all">
+               <button type="submit" disabled={loading} className="w-full bg-[#ED1C24] text-white p-3 rounded font-black uppercase tracking-widest hover:bg-[#1D1B44] transition-all">
                  {loading ? 'Syncing...' : 'Confirm Changes'}
                </button>
             </form>
           ) : (
             <div className="grid grid-cols-5 gap-2 text-center">
-              <StatDisplay label="Weight" val={`${profileForm.weight_kg}kg`} />
-              <StatDisplay label="Height" val={`${profileForm.height_cm}cm`} />
-              <StatDisplay label="RHR" val={profileForm.rhr || '--'} />
-              <StatDisplay label="MAX HR" val={profileForm.max_hr || '--'} />
+              <StatDisplay label="Weight" val={`${profileForm.weight_kg || sailor.weight_kg || '--'}kg`} />
+              <StatDisplay label="Height" val={`${profileForm.height_cm || sailor.height_cm || '--'}cm`} />
+              <StatDisplay label="RHR" val={profileForm.rhr || sailor.rhr || '--'} />
+              <StatDisplay label="MAX HR" val={profileForm.max_hr || sailor.max_hr || '--'} />
               <div className="bg-red-50 p-2 rounded border border-red-100">
                 <span className="block text-[8px] font-black text-red-600 uppercase">VO2 Max</span>
-                <span className="text-sm font-black text-red-700">{profileForm.vo2max || '--'}</span>
+                <span className="text-sm font-black text-red-700">{profileForm.vo2max || sailor.vo2max || '--'}</span>
               </div>
             </div>
           )}
@@ -194,11 +195,11 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
           <form onSubmit={handleManualSubmit} className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase">Avg HR</label>
-              <input type="number" className="w-full mt-1" value={manualGarminData.avgHr} onChange={e => setManualGarminData({...manualGarminData, avgHr: e.target.value})} />
+              <input type="number" className="w-full mt-1 border rounded p-1" value={manualGarminData.avgHr} onChange={e => setManualGarminData({...manualGarminData, avgHr: e.target.value})} />
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase">Stress Score</label>
-              <input type="number" className="w-full mt-1" value={manualGarminData.stressScore} onChange={e => setManualGarminData({...manualGarminData, stressScore: e.target.value})} />
+              <input type="number" className="w-full mt-1 border rounded p-1" value={manualGarminData.stressScore} onChange={e => setManualGarminData({...manualGarminData, stressScore: e.target.value})} />
             </div>
             <div className="col-span-2 bg-slate-50 p-4 rounded border border-slate-100">
               <label className="text-[10px] font-black text-slate-400 mb-2 block uppercase">Subjective RPE (1-10)</label>
@@ -236,7 +237,6 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
   );
 }
 
-// Sub-components for cleaner code
 function StatDisplay({ label, val }) {
   return (
     <div className="bg-slate-50 p-2 rounded">
