@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Wind, Thermometer, Waves, Compass, Droplets, MapPin } from 'lucide-react';
 
+import { API_URL } from '../config';
+
+
 export default function LiveConditions() {
   const [weather, setWeather] = useState(null);
   const [tides, setTides] = useState(null);
@@ -17,8 +20,8 @@ export default function LiveConditions() {
       try {
         // Fetch from our new free Open-Meteo and RSS endpoints
         const [weatherRes, tideRes] = await Promise.all([
-          axios.get(`http://localhost:5222/api/weather/current?lat=${LAT}&lon=${LON}`),
-          axios.get(`http://localhost:5222/api/tides/portsmouth`)
+          axios.get(`${API_URL}/weather/current?lat=${LAT}&lon=${LON}`),
+          axios.get(`${API_URL}/tides/portsmouth`)
         ]);
 
         const current = weatherRes.data.current;

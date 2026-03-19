@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
+import { API_URL } from '../config';
+
 export default function AthleteDashboard({ sailor, updateProfile }) {
   const [isEditing, setIsEditing] = useState(false);
   const [profileForm, setProfileForm] = useState({ weightKg: '', heightCm: '', rhr: '', maxHr: '', vo2max: '' });
@@ -24,7 +26,7 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
 
   const fetchHistory = async () => {
     try {
-      const response = await axios.get('http://localhost:5222/api/history');
+      const response = await axios.get(`${API_URL}/history`);
       const sailorHistory = response.data.telemetry
         .filter(log => log.sailorId === sailor.id)
         .map(log => ({ ...log, date: new Date(log.timestamp).toLocaleDateString() }));
@@ -47,7 +49,7 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/telemetry', { sailorId: sailor.id, sailorName: sailor.name, ...manualGarminData });
+      await axios.post('${API_URL}/telemetry', { sailorId: sailor.id, sailorName: sailor.name, ...manualGarminData });
       alert(`Success! Data saved.`);
       setManualGarminData({ avgHr: '', maxHr: '', sleepHours: '', rpe: '5', stressScore: '' });
       fetchHistory();

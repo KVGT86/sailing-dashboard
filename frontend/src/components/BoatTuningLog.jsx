@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import SailTracker from './SailTracker'; // Import the new tracker
+import { API_URL } from '../config';
 
 export default function BoatTuningLog({ activeCrew }) {
   const [formData, setFormData] = useState({
@@ -13,12 +14,14 @@ export default function BoatTuningLog({ activeCrew }) {
     jibUsed: 'J1-104', // Matches our db.json ID
     notes: ''
   });
+  
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       // POST to your backend on Port 5222
-      await axios.post('http://localhost:5222/api/tuning', { 
+      await axios.post(`${API_URL}/tuning`, { 
         ...formData, 
         crewWeight: activeCrew.reduce((sum, s) => sum + s.weightKg, 0) 
       });

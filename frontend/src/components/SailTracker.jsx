@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_URL } from '../config';
 
 export default function SailTracker() {
   const [sails, setSails] = useState([]);
 
   useEffect(() => {
     const fetchSails = async () => {
-      const res = await axios.get('http://localhost:5222/api/history');
+      const res = await axios.get(`${API_URL}/history`);
       setSails(res.data.sails || []);
     };
     fetchSails();
