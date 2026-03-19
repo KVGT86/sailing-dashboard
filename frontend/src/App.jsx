@@ -3,6 +3,7 @@ import axios from 'axios';
 import AthleteDashboard from './components/AthleteDashboard';
 import LiveConditions from './components/LiveConditions';
 import SetupGuide from './components/SetupGuide';
+import SailTracker from './components/SailTracker'; // New Component
 import { API_URL } from './config';
 
 export default function App() {
@@ -29,42 +30,61 @@ export default function App() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- NICER CREW TOGGLE (Syncs to DB) ---
   const toggleOnBoat = async (sailor) => {
     try {
       const updatedSailor = { ...sailor, on_boat: !sailor.on_boat };
-      // Immediately update local UI for speed
       setRoster(prev => prev.map(s => s.id === sailor.id ? updatedSailor : s));
-      // Save to Postgres
       await axios.post(`${API_URL}/athletes`, updatedSailor);
     } catch (error) {
       alert("Failed to sync crew status.");
-      fetchData(); // Rollback on error
+      fetchData();
+    }
+  };
+
+  const addSailor = async () => {
+    const name = prompt("Enter New Sailor Name:");
+    if (!name) return;
+    await axios.post(`${API_URL}/athletes`, { name, weight_kg: 80, height_cm: 180, rhr: 60, max_hr: 190, vo2max: 50, on_boat: false });
+    fetchData();
+  };
+
+  const deleteSailor = async (id) => {
+    if (window.confirm("Remove this sailor from the fleet?")) {
+      await axios.delete(`${API_URL}/athletes/${id}`);
+      fetchData();
     }
   };
 
   const activeCrew = roster.filter(s => s.on_boat);
   const currentSailor = roster.find(s => s.id === selectedSailorId);
 
-  if (loading) return <div className="min-h-screen bg-[#1D1B44] flex items-center justify-center text-white font-black italic uppercase">Syncing GBR 1381...</div>;
+  if (loading) return <div className="min-h-screen bg-[#1D1B44] flex items-center justify-center text-white font-black italic uppercase animate-pulse">Syncing GBR 1381...</div>;
 
   return (
     <div className="bg-slate-100 min-h-screen pb-10">
-      <nav className="bg-[#1D1B44] text-white p-4 shadow-lg flex justify-between items-center border-b-4 border-[#ED1C24]">
-        <h1 className="text-xl font-black uppercase italic tracking-tighter">Lightfoot Racing</h1>
-        <div className="flex gap-4 text-[10px] font-bold uppercase">
+      {/* NAVBAR WITH LOGO */}
+      <nav className="bg-[#1D1B44] text-white p-4 shadow-lg flex justify-between items-center border-b-4 border-[#ED1C24] sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Logo" className="h-8 w-auto object-contain" />
+          <div>
+            <h1 className="text-xl font-black uppercase italic tracking-tighter leading-none">Lightfoot Racing</h1>
+            <p className="text-[8px] font-bold tracking-widest text-[#ED1C24] uppercase">GBR 1381 • Performance</p>
+          </div>
+        </div>
+        <div className="flex gap-3 md:gap-5 text-[10px] font-black uppercase overflow-x-auto">
           {['dashboard', 'guide', 'weather', 'sails', 'fleet'].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={activeTab === tab ? 'text-[#ED1C24]' : 'text-slate-400'}>{tab}</button>
+            <button key={tab} onClick={() => setActiveTab(tab)} className={activeTab === tab ? 'text-[#ED1C24]' : 'text-slate-400 hover:text-white'}>
+              {tab}
+            </button>
           ))}
         </div>
       </nav>
 
       <main className="container mx-auto mt-6 px-4">
-        
-        {/* TOP LEVEL CREW SELECTOR (Available on most tabs) */}
+        {/* GLOBAL CREW SELECTOR */}
         {activeTab !== 'fleet' && (
           <div className="bg-white p-4 rounded-xl shadow mb-6 flex flex-wrap items-center gap-3 border-l-4 border-[#ED1C24]">
-            <span className="text-[10px] font-black uppercase text-slate-400 mr-2">On Boat today:</span>
+            <span className="text-[10px] font-black uppercase text-slate-400 mr-2">On Boat Today:</span>
             {roster.map(s => (
               <button
                 key={s.id}
@@ -79,47 +99,37 @@ export default function App() {
           </div>
         )}
 
-        <div className="animate-in fade-in duration-500">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
           {activeTab === 'dashboard' && (
             <>
               <div className="mb-4 flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase text-slate-400">Athlete Profile:</span>
-                <select value={selectedSailorId} onChange={(e) => setSelectedSailorId(Number(e.target.value))} className="font-bold text-sm outline-none bg-transparent">
+                <span className="text-[10px] font-black uppercase text-slate-400">Profile:</span>
+                <select value={selectedSailorId} onChange={(e) => setSelectedSailorId(Number(e.target.value))} className="font-bold text-sm bg-transparent outline-none">
                   {roster.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <AthleteDashboard sailor={currentSailor} updateProfile={() => fetchData()} />
+              <AthleteDashboard sailor={currentSailor} updateProfile={fetchData} />
             </>
           )}
 
           {activeTab === 'guide' && <SetupGuide activeCrew={activeCrew} />}
-          
           {activeTab === 'weather' && <LiveConditions />}
-
-          {/* RESTORED SAIL TRACKER PAGE */}
-          {activeTab === 'sails' && (
-            <div className="bg-white p-6 rounded-xl shadow-xl border-t-4 border-blue-600">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="font-black uppercase italic text-[#1D1B44]">Sail Wardrobe</h2>
-                <button onClick={() => {/* Add Sail Logic */}} className="bg-blue-600 text-white px-3 py-1 rounded font-black text-[10px] uppercase">+ Add Sail</button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sails.map(sail => (
-                  <div key={sail.id} className="p-4 border rounded-lg bg-slate-50 relative overflow-hidden">
-                    <div className={`absolute top-0 right-0 h-1 w-full ${sail.hours_flown > 50 ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                    <p className="font-black text-blue-600 text-[10px] uppercase">{sail.id}</p>
-                    <h3 className="font-bold text-[#1D1B44]">{sail.name}</h3>
-                    <p className="text-sm font-black mt-2">{sail.hours_flown} <span className="text-[10px] text-slate-400 uppercase">Hours on Clock</span></p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {activeTab === 'sails' && <SailTracker sails={sails} refresh={fetchData} />}
 
           {activeTab === 'fleet' && (
              <div className="bg-white p-6 rounded-xl shadow border-t-4 border-[#1D1B44]">
-                <h2 className="font-black uppercase italic text-[#1D1B44] mb-4">Roster Management</h2>
-                {/* Add/Delete Sailor logic here */}
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="font-black uppercase italic text-[#1D1B44]">Fleet Roster</h2>
+                  <button onClick={addSailor} className="bg-[#ED1C24] text-white px-4 py-2 rounded font-black text-xs uppercase shadow-lg">+ Add Sailor</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {roster.map(s => (
+                    <div key={s.id} className="flex justify-between items-center p-4 bg-slate-50 border rounded-lg">
+                      <span className="font-black text-[#1D1B44]">{s.name}</span>
+                      <button onClick={() => deleteSailor(s.id)} className="text-[#ED1C24] font-black text-[10px] uppercase hover:underline">Remove</button>
+                    </div>
+                  ))}
+                </div>
              </div>
           )}
         </div>
