@@ -170,6 +170,31 @@ app.get('/api/weather/solent', async (req, res) => {
   } catch (err) { res.status(500).send("Weather Proxy Failed"); }
 });
 
+// DELETE an athlete
+app.delete('/api/athletes/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM athlete_profiles WHERE id = $1', [req.params.id]);
+    res.sendStatus(200);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// ADD a sail
+app.post('/api/sails', async (req, res) => {
+  const { id, name, type } = req.body;
+  try {
+    await pool.query('INSERT INTO sail_inventory (id, name, hours_flown, type) VALUES ($1, $2, 0, $3)', [id, name, type]);
+    res.sendStatus(200);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// DELETE a sail
+app.delete('/api/sails/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM sail_inventory WHERE id = $1', [req.params.id]);
+    res.sendStatus(200);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
 // SERVER START
 const PORT = process.env.PORT || 5222;
 app.listen(PORT, '0.0.0.0', () => {
