@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Wind, Thermometer, Waves, Compass, Droplets, MapPin } from 'lucide-react';
-
 import { API_URL } from '../config';
-
 
 export default function LiveConditions() {
   const [weather, setWeather] = useState(null);
@@ -11,17 +9,13 @@ export default function LiveConditions() {
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState(false);
 
-  // Solent Coordinates (Bramble Bank / Portsmouth)
-  const LAT = 50.8;
-  const LON = -1.1;
-
   useEffect(() => {
     const fetchLiveConditions = async () => {
       try {
-        // Fetch from our new free Open-Meteo and RSS endpoints
+        // Calling your NEW backend routes
         const [weatherRes, tideRes] = await Promise.all([
-          axios.get(`${API_URL}/weather/current?lat=${LAT}&lon=${LON}`),
-          axios.get(`${API_URL}/tides/portsmouth`)
+          axios.get(`${API_URL}/weather/solent`),
+          axios.get(`${API_URL}/tides/portsmouth`) // Ensure this route exists or use /weather/solent for both
         ]);
 
         const current = weatherRes.data.current;
@@ -34,7 +28,8 @@ export default function LiveConditions() {
           humidity: current.relative_humidity_2m
         });
 
-        setTides(tideRes.data.extremes);
+        // If your backend isn't scraping tides yet, we'll default to an empty array to avoid crashes
+        setTides(tideRes.data.extremes || []);
 
       } catch (error) {
         console.error("API Fetch Error:", error);
@@ -45,32 +40,33 @@ export default function LiveConditions() {
     };
 
     fetchLiveConditions();
+    const interval = setInterval(fetchLiveConditions, 600000); // Refresh every 10 mins
+    return () => clearInterval(interval);
   }, []);
 
-  if (isLoading) return <div className="p-6 text-[#0A192F] font-bold text-xl animate-pulse">Fetching Free Marine Data...</div>;
+  if (isLoading) return <div className="p-6 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase tracking-widest">Scanning Solent Sensors...</div>;
 
-  if (apiError || !weather || !tides) return (
-    <div className="p-6 max-w-2xl mx-auto mt-10 bg-red-50 border-l-4 border-red-600 rounded">
-      <h3 className="text-xl font-bold text-red-800">Connection Failed</h3>
-      <p className="text-red-700 mt-2 font-medium">Please ensure your Node.js backend server is running on port 5000.</p>
+  if (apiError) return (
+    <div className="p-6 max-w-2xl mx-auto mt-10 bg-red-50 border-l-8 border-[#ED1C24] rounded shadow-lg">
+      <h3 className="text-xl font-black text-red-800 uppercase italic">Telemetry Connection Failed</h3>
+      <p className="text-red-700 mt-2 font-bold">The GBR 1381 Backend is currently offline or waking up. Please wait 30 seconds and refresh.</p>
     </div>
   );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-700">
       
       {/* HEADER SECTION */}
-      <div className="bg-[#0A192F] text-white p-6 rounded-xl shadow-lg flex justify-between items-center border-b-4 border-red-600">
+      <div className="bg-[#1D1B44] text-white p-6 rounded-xl shadow-2xl flex justify-between items-center border-b-4 border-[#ED1C24]">
         <div>
-          <h2 className="text-2xl font-black uppercase tracking-wide flex items-center gap-2">
-            <MapPin className="text-red-500" /> Solent Live Conditions
+          <h2 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2">
+            <MapPin className="text-[#ED1C24]" /> Solent Live Conditions
           </h2>
-          <p className="text-gray-400 font-medium mt-1">Powered by Open-Meteo & TideTimes (Free Tier)</p>
+          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Satellite Sync: Active // GBR 1381</p>
         </div>
         <div className="text-right hidden md:block">
-          <div className="text-sm font-bold text-gray-400 uppercase">Status</div>
-          <div className="text-green-400 font-bold flex items-center gap-1">
-            <span className="h-2 w-2 bg-green-400 rounded-full animate-pulse"></span> Free Sensors Active
+          <div className="text-green-400 font-black text-xs uppercase flex items-center gap-2">
+            <span className="h-2 w-2 bg-green-400 rounded-full animate-ping"></span> Live Data Stream
           </div>
         </div>
       </div>
@@ -78,57 +74,58 @@ export default function LiveConditions() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* WIND CARD */}
-        <div className="bg-white p-6 rounded-xl shadow border-t-4 border-[#0A192F] flex flex-col items-center justify-center text-center">
-          <Wind size={40} className="text-[#0A192F] mb-3" />
-          <h3 className="text-sm font-bold text-gray-500 uppercase">Surface Wind</h3>
-          <div className="text-5xl font-black text-[#0A192F] my-2">
-            {weather.windSpeed} <span className="text-xl text-gray-500 font-bold">kts</span>
+        <div className="bg-white p-8 rounded-xl shadow-xl border-t-4 border-[#1D1B44] flex flex-col items-center text-center">
+          <Wind size={48} className="text-[#1D1B44] mb-4" />
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Surface Wind</h3>
+          <div className="text-6xl font-black text-[#1D1B44] my-2 italic">
+            {weather.windSpeed} <span className="text-xl text-slate-400 not-italic uppercase">kts</span>
           </div>
-          <div className="flex gap-4 mt-2">
-            <div className="bg-red-50 px-3 py-1 rounded border border-red-200">
-              <span className="block text-[10px] font-bold text-red-600 uppercase">Gusts</span>
-              <span className="font-bold text-red-700">{weather.windGust !== '--' ? `${weather.windGust} kts` : '--'}</span>
+          <div className="flex gap-4 mt-4">
+            <div className="bg-red-50 px-4 py-2 rounded border border-red-100">
+              <span className="block text-[8px] font-black text-[#ED1C24] uppercase">Gusts</span>
+              <span className="font-black text-[#ED1C24] text-lg">{weather.windGust}</span>
             </div>
-            <div className="bg-gray-100 px-3 py-1 rounded border border-gray-200 flex items-center gap-2">
-              <div>
-                <span className="block text-[10px] font-bold text-gray-500 uppercase">Direction</span>
-                <span className="font-bold text-[#0A192F]">{weather.windDirection}°</span>
+            <div className="bg-slate-50 px-4 py-2 rounded border border-slate-100 flex items-center gap-3">
+              <div className="text-left">
+                <span className="block text-[8px] font-black text-slate-400 uppercase">Dir</span>
+                <span className="font-black text-[#1D1B44] text-lg">{weather.windDirection}°</span>
               </div>
-              <Compass size={20} className="text-gray-400" style={{ transform: `rotate(${weather.windDirection}deg)` }} />
+              <Compass size={24} className="text-[#1D1B44]" style={{ transform: `rotate(${weather.windDirection}deg)` }} />
             </div>
           </div>
         </div>
 
         {/* ATMOSPHERE CARD */}
-        <div className="bg-white p-6 rounded-xl shadow border-t-4 border-red-600 flex flex-col items-center justify-center text-center">
-          <Thermometer size={40} className="text-red-600 mb-3" />
-          <h3 className="text-sm font-bold text-gray-500 uppercase">Air Temp</h3>
-          <div className="text-5xl font-black text-[#0A192F] my-2">
-            {weather.temp}°<span className="text-xl text-gray-500 font-bold">C</span>
+        <div className="bg-white p-8 rounded-xl shadow-xl border-t-4 border-[#ED1C24] flex flex-col items-center text-center">
+          <Thermometer size={48} className="text-[#ED1C24] mb-4" />
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Air Temp</h3>
+          <div className="text-6xl font-black text-[#1D1B44] my-2 italic">
+            {weather.temp}°<span className="text-xl text-slate-400 not-italic">C</span>
           </div>
-          <div className="mt-2 bg-blue-50 px-3 py-1 rounded border border-blue-200 flex items-center gap-2">
+          <div className="mt-4 bg-blue-50 px-6 py-2 rounded-full border border-blue-100 flex items-center gap-2">
             <Droplets size={16} className="text-blue-500" />
-            <div>
-              <span className="block text-[10px] font-bold text-blue-800 uppercase">Humidity</span>
-              <span className="font-bold text-blue-900">{weather.humidity}%</span>
-            </div>
+            <span className="text-[10px] font-black text-blue-900 uppercase">Humidity: {weather.humidity}%</span>
           </div>
         </div>
 
         {/* TIDES CARD */}
-        <div className="bg-white p-6 rounded-xl shadow border-t-4 border-[#0A192F]">
-          <div className="flex items-center gap-2 mb-4 justify-center md:justify-start">
-            <Waves size={24} className="text-[#0A192F]" />
-            <h3 className="text-lg font-bold text-[#0A192F] uppercase">Today's Tides (Portsmouth)</h3>
+        <div className="bg-white p-6 rounded-xl shadow-xl border-t-4 border-[#1D1B44]">
+          <div className="flex items-center gap-2 mb-6 justify-center">
+            <Waves size={24} className="text-[#1D1B44]" />
+            <h3 className="text-sm font-black text-[#1D1B44] uppercase italic tracking-tighter">Portsmouth Tides</h3>
           </div>
           <div className="space-y-3">
-            {tides && tides.map((tide, index) => (
-              <div key={index} className={`flex justify-between items-center p-3 rounded font-bold ${tide.type === 'High' ? 'bg-[#0A192F] text-white' : 'bg-gray-100 text-[#0A192F]'}`}>
-                <span>{tide.type} Water</span>
-                <span className="text-lg">{tide.time}</span>
-                <span className={`${tide.type === 'High' ? 'text-red-400' : 'text-gray-500'}`}>{tide.height}m</span>
+            {tides && tides.length > 0 ? tides.map((tide, index) => (
+              <div key={index} className={`flex justify-between items-center p-3 rounded-lg font-black transition-all ${tide.type === 'High' ? 'bg-[#1D1B44] text-white' : 'bg-slate-100 text-[#1D1B44]'}`}>
+                <span className="text-[10px] uppercase">{tide.type}</span>
+                <span className="text-lg italic">{tide.time}</span>
+                <span className={`text-xs ${tide.type === 'High' ? 'text-[#ED1C24]' : 'text-slate-400'}`}>{tide.height}m</span>
               </div>
-            ))}
+            )) : (
+              <div className="text-center py-10">
+                <p className="text-[10px] font-black text-slate-300 uppercase italic">Check local chart for tide times</p>
+              </div>
+            )}
           </div>
         </div>
 
