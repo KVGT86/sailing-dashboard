@@ -8,11 +8,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 1. DATABASE CONNECTION
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
+// 2. INITIALIZE TABLES
 const initDB = async () => {
   try {
     // A. Athlete Profiles
@@ -32,35 +34,67 @@ const initDB = async () => {
     // B. Sail Inventory
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sail_inventory (
-        id TEXT PRIMARY KEY, -- Example: 'J2-104'
+        id TEXT PRIMARY KEY,
         name TEXT,
         hours_flown FLOAT DEFAULT 0,
-        type TEXT, -- 'Main', 'Jib', 'Spinnaker'
+        type TEXT, 
         last_used DATE DEFAULT CURRENT_DATE
       )
     `);
 
-    // C. Tuning Logs
+    // C. Tuning Logs (The History/Sessions)
+    // Updated to handle both athlete telemetry and boat settings
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tuning_logs (
         id SERIAL PRIMARY KEY,
-        date DATE,
-        duration FLOAT,
+        date DATE DEFAULT CURRENT_DATE,
+        sailor_name TEXT,
+        wind_condition TEXT,
+        duration FLOAT DEFAULT 0,
+        upper_shroud INT,
+        lower_shroud INT,
+        headstay TEXT,
         jib_used TEXT REFERENCES sail_inventory(id) ON DELETE SET NULL,
         notes TEXT,
         rpe INT,
-        stress_score INT
+        stress_score INT,
+        avg_hr INT
       )
     `);
 
-    console.log("⚓ GBR 1381 Database Fully Synced");
+    // D. Tuning Guide (The Targets)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tuning_guide (
+        wind_range TEXT PRIMARY KEY,
+        upper_shroud INT,
+        lower_shroud INT,
+        headstay TEXT,
+        jib_selection TEXT
+      )
+    `);
+
+    // --- SEED DATA (Only inserts if table is empty) ---
+    const guideCheck = await pool.query('SELECT * FROM tuning_guide LIMIT 1');
+    if (guideCheck.rowCount === 0) {
+      await pool.query(`
+        INSERT INTO tuning_guide (wind_range, upper_shroud, lower_shroud, headstay, jib_selection)
+        VALUES 
+          ('Light (0-10kts)', 14, 8, '+1 hole', 'J1'),
+          ('Base (11-16kts)', 20, 15, 'Base', 'J2'),
+          ('Heavy (17+ kts)', 24, 19, '-1 hole', 'J2')
+      `);
+    }
+
+    console.log("⚓ GBR 1381 Database Fully Synced & Functional");
   } catch (err) {
     console.error("❌ Database Init Error:", err);
   }
 };
 initDB();
 
-// --- ATHLETE ROUTES ---
+// --- ROUTES ---
+
+// 1. ATHLETES
 app.get('/api/athletes', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM athlete_profiles ORDER BY name ASC');
@@ -88,7 +122,37 @@ app.delete('/api/athletes/:id', async (req, res) => {
   } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- SAIL ROUTES ---
+// 2. TUNING LOGS & HISTORY
+app.get('/api/history', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM tuning_logs ORDER BY date DESC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+app.post('/api/tuning', async (req, res) => {
+  const { 
+    date, sailorName, windCondition, sessionDurationHours, 
+    upperShroudPT2, lowerShroudPT2, headstayLength, jibUsed, 
+    notes, rpe, stressScore, avgHr 
+  } = req.body;
+  
+  try {
+    await pool.query(`
+      INSERT INTO tuning_logs 
+      (date, sailor_name, wind_condition, duration, upper_shroud, lower_shroud, headstay, jib_used, notes, rpe, stress_score, avg_hr)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `, [date, sailorName, windCondition, sessionDurationHours, upperShroudPT2, lowerShroudPT2, headstayLength, jibUsed, notes, rpe, stressScore, avgHr]);
+    
+    // Update Sail hours if a jib was used
+    if (jibUsed && sessionDurationHours) {
+      await pool.query('UPDATE sail_inventory SET hours_flown = hours_flown + $1 WHERE id = $2', [sessionDurationHours, jibUsed]);
+    }
+    res.sendStatus(200);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// 3. SAILS
 app.get('/api/sails', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sail_inventory ORDER BY hours_flown ASC');
@@ -115,17 +179,39 @@ app.delete('/api/sails/:id', async (req, res) => {
   } catch (err) { res.status(500).send(err.message); }
 });
 
-// DANGER: Visit lightfoot-backend.onrender.com/api/admin/reset-db to wipe everything
+// 4. TUNING GUIDE (Targets)
+app.get('/api/guide', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM tuning_guide ORDER BY upper_shroud ASC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// 5. WEATHER & TIDES
+app.get('/api/weather/solent', async (req, res) => {
+  try {
+    const response = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.8&longitude=-1.1&current=wind_speed_10m,wind_direction_10m,temperature_2m');
+    res.json(response.data);
+  } catch (err) { res.status(500).send("Weather Proxy Failed"); }
+});
+
+app.get('/api/tides/portsmouth', async (req, res) => {
+  try {
+    // This is a static mock. In a real scenario, you'd proxy an RSS or API feed.
+    res.json({ extremes: [
+      { type: 'High', time: '13:12', height: '4.4m' },
+      { type: 'Low', time: '19:45', height: '0.9m' }
+    ]});
+  } catch (err) { res.status(500).send("Tide Fetch Failed"); }
+});
+
+// ADMIN: Reset
 app.get('/api/admin/reset-db', async (req, res) => {
   try {
-    await pool.query('DROP TABLE IF EXISTS tuning_logs');
-    await pool.query('DROP TABLE IF EXISTS athlete_profiles');
-    await pool.query('DROP TABLE IF EXISTS sail_inventory');
-    await initDB(); // Re-create the empty tables
-    res.send("Database wiped and reset to factory settings.");
-  } catch (err) {
-    res.status(500).send(err.message);
-  }
+    await pool.query('DROP TABLE IF EXISTS tuning_logs, athlete_profiles, sail_inventory, tuning_guide');
+    await initDB();
+    res.send("Database wiped and reset.");
+  } catch (err) { res.status(500).send(err.message); }
 });
 
 const PORT = process.env.PORT || 5222;
