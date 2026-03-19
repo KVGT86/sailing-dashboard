@@ -14,7 +14,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// 2. INITIALIZE TABLES
+// 2. INITIALIZE TABLES (Updated for Learning AI)
 const initDB = async () => {
   try {
     // A. Athlete Profiles
@@ -38,12 +38,12 @@ const initDB = async () => {
         name TEXT,
         hours_flown FLOAT DEFAULT 0,
         type TEXT, 
+        is_race_sail BOOLEAN DEFAULT TRUE,
         last_used DATE DEFAULT CURRENT_DATE
       )
     `);
 
-    // C. Tuning Logs (The History/Sessions)
-    // IMPORTANT: 'sailor_name' is included here to prevent the 500 error
+    // C. Tuning Logs
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tuning_logs (
         id SERIAL PRIMARY KEY,
@@ -62,10 +62,23 @@ const initDB = async () => {
       )
     `);
 
-    // D. Tuning Guide (The Targets)
+    // D. PERFORMANCE FEEDBACK (The AI's "Memory")
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS performance_feedback (
+        id SERIAL PRIMARY KEY,
+        wind_speed FLOAT,
+        upper_offset INT DEFAULT 0,
+        lower_offset INT DEFAULT 0,
+        performance_rating INT, -- 1 to 5
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // E. SMART TUNING GUIDE (Updated for Wind Ranges)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tuning_guide (
-        wind_range TEXT PRIMARY KEY,
+        min_wind INT PRIMARY KEY,
+        max_wind INT,
         upper_shroud INT,
         lower_shroud INT,
         headstay TEXT,
@@ -73,28 +86,76 @@ const initDB = async () => {
       )
     `);
 
-    // --- SEED DATA (Only inserts if table is empty) ---
+    // --- SEED DATA ---
     const guideCheck = await pool.query('SELECT * FROM tuning_guide LIMIT 1');
     if (guideCheck.rowCount === 0) {
       await pool.query(`
-        INSERT INTO tuning_guide (wind_range, upper_shroud, lower_shroud, headstay, jib_selection)
+        INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, jib_selection)
         VALUES 
-          ('Light (0-10kts)', 14, 8, '+1 hole', 'J1'),
-          ('Base (11-16kts)', 20, 15, 'Base', 'J2'),
-          ('Heavy (17+ kts)', 24, 19, '-1 hole', 'J2')
+          (0, 10, 14, 8, '+1 hole', 'J1'),
+          (11, 16, 20, 15, 'Base', 'J2'),
+          (17, 30, 24, 19, '-1 hole', 'J2')
       `);
     }
 
-    console.log("⚓ GBR 1381 Database Fully Synced & Functional");
+    console.log("⚓ GBR 1381 AI Engine Synced & Learning");
   } catch (err) {
     console.error("❌ Database Init Error:", err);
   }
 };
 initDB();
 
-// --- ROUTES ---
+// --- AI & RECOMMENDATION ROUTES ---
 
-// 1. ATHLETES
+// Smart Recommendation Engine
+app.get('/api/recommendation', async (req, res) => {
+  const windSpd = parseFloat(req.query.wind) || 10;
+
+  try {
+    // 1. Get Base Guide for current wind
+    const base = await pool.query(
+      'SELECT * FROM tuning_guide WHERE $1 BETWEEN min_wind AND max_wind', 
+      [Math.round(windSpd)]
+    );
+
+    // 2. Calculate AI Offset (Average of 4+ star sessions in similar wind)
+    const aiData = await pool.query(
+      'SELECT AVG(upper_offset) as u_adj, AVG(lower_offset) as l_adj FROM performance_feedback WHERE wind_speed BETWEEN $1 AND $2 AND performance_rating >= 4',
+      [windSpd - 3, windSpd + 3]
+    );
+
+    // 3. Find Best Sail (Type from guide, lowest hours, is race sail)
+    const jibType = base.rows[0]?.jib_selection || 'J2';
+    const sail = await pool.query(
+      'SELECT id, hours_flown FROM sail_inventory WHERE type = $1 AND is_race_sail = TRUE ORDER BY hours_flown ASC LIMIT 1',
+      [jibType]
+    );
+
+    res.json({
+      base: base.rows[0],
+      suggested_offsets: { 
+        upper: Math.round(aiData.rows[0].u_adj || 0), 
+        lower: Math.round(aiData.rows[0].l_adj || 0) 
+      },
+      recommended_sail: sail.rows[0]?.id || "No Race Sail Found"
+    });
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// Save AI Learning Feedback
+app.post('/api/feedback', async (req, res) => {
+  const { wind_speed, upper_offset, lower_offset, performance_rating } = req.body;
+  try {
+    await pool.query(
+      'INSERT INTO performance_feedback (wind_speed, upper_offset, lower_offset, performance_rating) VALUES ($1, $2, $3, $4)',
+      [wind_speed, upper_offset, lower_offset, performance_rating]
+    );
+    res.sendStatus(200);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// --- CORE ROUTES ---
+
 app.get('/api/athletes', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM athlete_profiles ORDER BY name ASC');
@@ -115,61 +176,6 @@ app.post('/api/athletes', async (req, res) => {
   } catch (err) { res.status(500).send(err.message); }
 });
 
-app.delete('/api/athletes/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM athlete_profiles WHERE id = $1', [req.params.id]);
-    res.sendStatus(200);
-  } catch (err) { res.status(500).send(err.message); }
-});
-
-// 2. TUNING LOGS & HISTORY
-app.get('/api/history', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM tuning_logs ORDER BY date DESC');
-    res.json(result.rows);
-  } catch (err) { res.status(500).send(err.message); }
-});
-
-app.post('/api/tuning', async (req, res) => {
-  const { 
-    date, sailorName, windCondition, sessionDurationHours, 
-    upperShroudPT2, lowerShroudPT2, headstayLength, jibUsed, 
-    notes, rpe, stressScore, avgHr 
-  } = req.body;
-  
-  try {
-    const query = `
-      INSERT INTO tuning_logs 
-      (date, sailor_name, wind_condition, duration, upper_shroud, lower_shroud, headstay, jib_used, notes, rpe, stress_score, avg_hr)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    `;
-    
-    await pool.query(query, [
-      date, 
-      sailorName, // Mapped to sailor_name
-      windCondition, 
-      sessionDurationHours, 
-      upperShroudPT2, 
-      lowerShroudPT2, 
-      headstayLength, 
-      jibUsed, 
-      notes, 
-      rpe, 
-      stressScore, 
-      avgHr
-    ]);
-    
-    if (jibUsed && sessionDurationHours) {
-      await pool.query('UPDATE sail_inventory SET hours_flown = hours_flown + $1 WHERE id = $2', [sessionDurationHours, jibUsed]);
-    }
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Tuning Post Error:", err.message);
-    res.status(500).send(err.message);
-  }
-});
-
-// 3. SAILS
 app.get('/api/sails', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sail_inventory ORDER BY hours_flown ASC');
@@ -178,55 +184,38 @@ app.get('/api/sails', async (req, res) => {
 });
 
 app.post('/api/sails', async (req, res) => {
-  const { id, name, type, hours_flown } = req.body;
+  const { id, name, type, hours_flown, is_race_sail } = req.body;
   try {
     await pool.query(`
-      INSERT INTO sail_inventory (id, name, type, hours_flown)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id) DO UPDATE SET name = $2, type = $3, hours_flown = $4
-    `, [id, name, type, hours_flown || 0]);
+      INSERT INTO sail_inventory (id, name, type, hours_flown, is_race_sail)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO UPDATE SET name = $2, type = $3, hours_flown = $4, is_race_sail = $5
+    `, [id, name, type, hours_flown || 0, is_race_sail]);
     res.sendStatus(200);
   } catch (err) { res.status(500).send(err.message); }
 });
 
-app.delete('/api/sails/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM sail_inventory WHERE id = $1', [req.params.id]);
-    res.sendStatus(200);
-  } catch (err) { res.status(500).send(err.message); }
-});
-
-// 4. TUNING GUIDE (Targets)
-app.get('/api/guide', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM tuning_guide ORDER BY upper_shroud ASC');
-    res.json(result.rows);
-  } catch (err) { res.status(500).send(err.message); }
-});
-
-// 5. WEATHER & TIDES
 app.get('/api/weather/solent', async (req, res) => {
   try {
-    const response = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.8&longitude=-1.1&current=wind_speed_10m,wind_direction_10m,temperature_2m');
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
+    const response = await axios.get(url);
     res.json(response.data);
   } catch (err) { res.status(500).send("Weather Proxy Failed"); }
 });
 
-app.get('/api/tides/portsmouth', async (req, res) => {
+app.get('/api/guide', async (req, res) => {
   try {
-    res.json({ extremes: [
-      { type: 'High', time: '13:12', height: '4.4m' },
-      { type: 'Low', time: '19:45', height: '0.9m' }
-    ]});
-  } catch (err) { res.status(500).send("Tide Fetch Failed"); }
+    const result = await pool.query('SELECT * FROM tuning_guide ORDER BY min_wind ASC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).send(err.message); }
 });
 
 // ADMIN: Reset
 app.get('/api/admin/reset-db', async (req, res) => {
   try {
-    await pool.query('DROP TABLE IF EXISTS tuning_logs, athlete_profiles, sail_inventory, tuning_guide');
+    await pool.query('DROP TABLE IF EXISTS performance_feedback, tuning_logs, athlete_profiles, sail_inventory, tuning_guide');
     await initDB();
-    res.send("Database wiped and reset.");
+    res.send("Database wiped and reset with AI tables.");
   } catch (err) { res.status(500).send(err.message); }
 });
 
