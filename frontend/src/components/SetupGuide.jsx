@@ -6,7 +6,8 @@ export default function SetupGuide({ activeCrew }) {
   const [guideData, setGuideData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const totalWeight = activeCrew.reduce((sum, s) => sum + (s.weight_kg || s.weightKg || 0), 0);
+  // Calculate total crew weight from the activeCrew passed via props
+  const totalWeight = activeCrew.reduce((sum, s) => sum + (s.weight_kg || 0), 0);
 
   useEffect(() => {
     const fetchGuide = async () => {
@@ -24,29 +25,36 @@ export default function SetupGuide({ activeCrew }) {
 
   return (
     <div className="bg-white rounded-xl shadow-xl overflow-hidden border-t-4 border-[#1D1B44]">
-      <div className="bg-[#1D1B44] p-4 text-white flex justify-between items-center">
-        <h2 className="font-black uppercase italic tracking-widest">Rig Setup Guide</h2>
+      {/* Header with Live Weight calculation */}
+      <div className="bg-[#1D1B44] p-6 text-white flex justify-between items-center">
+        <div>
+          <h2 className="font-black uppercase italic tracking-widest text-lg">Rig Setup Guide</h2>
+          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">GBR 1381 Class Standards</p>
+        </div>
         <div className="text-right">
-          <p className="text-[10px] uppercase font-bold text-slate-400">Live Crew Weight</p>
-          <p className="text-xl font-black text-[#ED1C24]">{totalWeight.toFixed(1)} KG</p>
+          <p className="text-[10px] uppercase font-bold text-slate-400">Active Crew Weight</p>
+          <p className="text-3xl font-black text-[#ED1C24] italic">{totalWeight.toFixed(0)} <span className="text-sm not-italic uppercase">KG</span></p>
         </div>
       </div>
 
       <div className="p-6">
         {loading ? (
-          <p className="text-center font-bold animate-pulse text-slate-400">Loading Fleet Targets...</p>
+          <p className="text-center font-bold animate-pulse text-slate-400 uppercase">Fetching Targets...</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {guideData.map((step) => (
-              <div key={step.wind_range} className="border-2 border-slate-100 rounded-lg p-4 hover:border-[#ED1C24] transition-colors">
-                <h3 className="text-[#1D1B44] font-black uppercase text-sm mb-3 border-b pb-2">{step.wind_range}</h3>
-                <div className="space-y-2">
-                  <SettingRow label="Uppers" value={step.upper_shroud} unit="PT2" />
-                  <SettingRow label="Lowers" value={step.lower_shroud} unit="PT2" />
+              <div key={step.wind_range} className="border-2 border-slate-100 rounded-lg p-5 hover:border-[#ED1C24] transition-all group">
+                <h3 className="text-[#1D1B44] font-black uppercase text-sm mb-4 border-b pb-2 italic group-hover:text-[#ED1C24]">
+                  {step.wind_range}
+                </h3>
+                <div className="space-y-3">
+                  <SettingRow label="Upper Shroud" value={step.upper_shroud} unit="PT2" />
+                  <SettingRow label="Lower Shroud" value={step.lower_shroud} unit="PT2" />
                   <SettingRow label="Headstay" value={step.headstay} />
-                  <div className="mt-4 p-2 bg-slate-50 rounded text-center">
-                    <span className="text-[10px] font-black uppercase text-slate-400 block">Jib Selection</span>
-                    <span className="font-black text-[#ED1C24]">{step.jib_selection}</span>
+                  
+                  <div className="mt-6 p-3 bg-slate-50 rounded text-center border border-slate-100">
+                    <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Recommended Jib</span>
+                    <span className="font-black text-[#ED1C24] text-lg uppercase italic">{step.jib_selection}</span>
                   </div>
                 </div>
               </div>
@@ -54,15 +62,21 @@ export default function SetupGuide({ activeCrew }) {
           </div>
         )}
       </div>
+
+      <div className="bg-slate-50 p-4 border-t border-slate-100">
+        <p className="text-[9px] text-slate-400 font-bold uppercase text-center leading-tight">
+          Note: Base settings assume 10 knots of wind. Adjust uppers +1 full turn for every 2 knots of additional sustained wind.
+        </p>
+      </div>
     </div>
   );
 }
 
 function SettingRow({ label, value, unit = "" }) {
   return (
-    <div className="flex justify-between text-xs font-bold">
-      <span className="text-slate-500 uppercase">{label}</span>
-      <span className="text-[#1D1B44]">{value} {unit}</span>
+    <div className="flex justify-between items-center text-xs font-bold">
+      <span className="text-slate-400 uppercase tracking-tighter">{label}</span>
+      <span className="text-[#1D1B44] font-black">{value} <span className="text-[10px] text-slate-400">{unit}</span></span>
     </div>
   );
 }
