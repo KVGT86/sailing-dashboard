@@ -5,7 +5,7 @@ import BoatTuningLog from './components/BoatTuningLog';
 import SolentTidesModule from './components/SolentTidesModule';
 import SetupGuide from './components/SetupGuide';
 import LiveConditions from './components/LiveConditions';
-import { API_BASE_URL } from './config';
+import { API_URL } from './config';
 
 export default function App() {
   const [roster, setRoster] = useState([]);
@@ -17,7 +17,7 @@ export default function App() {
   useEffect(() => {
     const fetchCrew = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/athletes`);
+        const response = await axios.get(`${API_URL}/athletes`);
         if (response.data.length > 0) {
           // Map snake_case from DB back to camelCase for the UI if necessary, 
           // though our new components handle both.
