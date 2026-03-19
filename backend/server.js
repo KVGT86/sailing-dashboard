@@ -43,7 +43,7 @@ const initDB = async () => {
     `);
 
     // C. Tuning Logs (The History/Sessions)
-    // Updated to handle both athlete telemetry and boat settings
+    // IMPORTANT: 'sailor_name' is included here to prevent the 500 error
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tuning_logs (
         id SERIAL PRIMARY KEY,
@@ -138,18 +138,35 @@ app.post('/api/tuning', async (req, res) => {
   } = req.body;
   
   try {
-    await pool.query(`
+    const query = `
       INSERT INTO tuning_logs 
       (date, sailor_name, wind_condition, duration, upper_shroud, lower_shroud, headstay, jib_used, notes, rpe, stress_score, avg_hr)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    `, [date, sailorName, windCondition, sessionDurationHours, upperShroudPT2, lowerShroudPT2, headstayLength, jibUsed, notes, rpe, stressScore, avgHr]);
+    `;
     
-    // Update Sail hours if a jib was used
+    await pool.query(query, [
+      date, 
+      sailorName, // Mapped to sailor_name
+      windCondition, 
+      sessionDurationHours, 
+      upperShroudPT2, 
+      lowerShroudPT2, 
+      headstayLength, 
+      jibUsed, 
+      notes, 
+      rpe, 
+      stressScore, 
+      avgHr
+    ]);
+    
     if (jibUsed && sessionDurationHours) {
       await pool.query('UPDATE sail_inventory SET hours_flown = hours_flown + $1 WHERE id = $2', [sessionDurationHours, jibUsed]);
     }
     res.sendStatus(200);
-  } catch (err) { res.status(500).send(err.message); }
+  } catch (err) {
+    console.error("❌ Tuning Post Error:", err.message);
+    res.status(500).send(err.message);
+  }
 });
 
 // 3. SAILS
@@ -197,7 +214,6 @@ app.get('/api/weather/solent', async (req, res) => {
 
 app.get('/api/tides/portsmouth', async (req, res) => {
   try {
-    // This is a static mock. In a real scenario, you'd proxy an RSS or API feed.
     res.json({ extremes: [
       { type: 'High', time: '13:12', height: '4.4m' },
       { type: 'Low', time: '19:45', height: '0.9m' }
