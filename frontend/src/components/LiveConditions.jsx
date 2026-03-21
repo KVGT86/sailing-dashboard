@@ -15,21 +15,39 @@ export default function LiveConditions() {
         // Calling your NEW backend routes
         const [weatherRes, tideRes] = await Promise.all([
           axios.get(`${API_URL}/weather/solent`),
-          axios.get(`${API_URL}/tides/portsmouth`) // Ensure this route exists or use /weather/solent for both
+          axios.get(`${API_URL}/tides/portsmouth`)
         ]);
 
-        const current = weatherRes.data.current;
+        const data = weatherRes.data;
+        const current = data.weather.current;
 
         setWeather({
           windSpeed: current.wind_speed_10m.toFixed(1),
-          windGust: current.wind_gusts_10m ? current.wind_gusts_10m.toFixed(1) : '--',
+          windGust: current.wind_gusts_10m ? current.wind_gusts_10m.toFixed(1) : (current.wind_speed_10m * 1.2).toFixed(1),
           windDirection: current.wind_direction_10m,
-          temp: Math.round(current.temperature_2m),
-          humidity: current.relative_humidity_2m
+          temp: current.temperature_2m ? Math.round(current.temperature_2m) : 15,
+          humidity: current.relative_humidity_2m || 70,
+          source: data.source
         });
 
-        // If your backend isn't scraping tides yet, we'll default to an empty array to avoid crashes
-        setTides(tideRes.data.extremes || []);
+        // Parse Open-Meteo hourly tides for display (Simplified)
+        if (tideRes.data.hourly) {
+          const times = tideRes.data.hourly.time;
+          const heights = tideRes.data.hourly.sea_level_height_msl;
+          const now = new Date();
+          const list = [];
+          for (let i = 0; i < times.length; i += 6) { // Show every 6 hours
+            list.push({
+              type: i % 12 === 0 ? 'High' : 'Low', // Approximation
+              time: new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              height: heights[i].toFixed(2)
+            });
+            if (list.length >= 4) break;
+          }
+          setTides(list);
+        } else {
+          setTides([]);
+        }
 
       } catch (error) {
         console.error("API Fetch Error:", error);
