@@ -13,13 +13,27 @@ export default function SetupGuide({ activeCrew }) {
     const fetchSmartSetup = async () => {
       try {
         const env = await axios.get(`${API_URL}/solent`);
-        const liveWind = env.data.weather.current.wind_speed_10m;
-        const liveSea = env.data.marine.current.wave_height;
+        const data = env.data || {};
+        const current = data.weather?.current || data.current || {};
+        
+        const liveWind = Number(current.wind_speed_10m ?? current.wind_speed ?? 12);
+        const liveSea = Number(data.marine?.current?.wave_height ?? 0.3);
+        
         setWind(liveWind);
 
         const rec = await axios.get(`${API_URL}/recommendation?wind=${liveWind}&weight=${totalWeight}&sea=${liveSea}`);
-        setData(rec.data);
-      } catch (err) { console.error("Sync Error", err); }
+        setData({
+          ...rec.data,
+          source: data.source || "System Default"
+        });
+      } catch (err) { 
+        console.error("Sync Error", err); 
+        // Load recommendation with defaults if weather fails
+        try {
+          const rec = await axios.get(`${API_URL}/recommendation?wind=12&weight=${totalWeight}&sea=0.3`);
+          setData({ ...rec.data, source: "Safe-Mode Fallback" });
+        } catch (e) { console.error("Critical Engine Failure"); }
+      }
       finally { setLoading(false); }
     };
     fetchSmartSetup();

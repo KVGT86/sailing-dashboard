@@ -22,33 +22,40 @@ export default function LiveConditions() {
         const weatherObj = data.weather || {};
         const current = weatherObj.current || data.current || {};
         
-        // Final Bulletproof Parsing
-        const rawSpd = current.wind_speed_10m ?? current.wind_speed ?? 12;
-        const rawDir = current.wind_direction_10m ?? current.wind_direction ?? 210;
-        const rawGust = current.wind_gusts_10m ?? (rawSpd * 1.2);
+        // Absolute safety for wind speed
+        const getVal = (val, fallback) => (val !== undefined && val !== null) ? Number(val) : fallback;
+
+        const wSpd = getVal(current.wind_speed_10m ?? current.wind_speed, 12);
+        const wDir = getVal(current.wind_direction_10m ?? current.wind_direction, 210);
+        const wGust = getVal(current.wind_gusts_10m, wSpd * 1.2);
+        const temp = getVal(current.temperature_2m, 15);
+        const humidity = getVal(current.relative_humidity_2m, 70);
 
         setWeather({
-          windSpeed: Number(rawSpd).toFixed(1),
-          windGust: Number(rawGust).toFixed(1),
-          windDirection: Number(rawDir),
-          temp: Math.round(current.temperature_2m ?? 15),
-          humidity: current.relative_humidity_2m ?? 70,
+          windSpeed: wSpd.toFixed(1),
+          windGust: wGust.toFixed(1),
+          windDirection: Math.round(wDir),
+          temp: Math.round(temp),
+          humidity: Math.round(humidity),
           source: data.source || "System Default"
         });
 
-      if (tideRes.data?.hourly?.sea_level_height_msl) {
-        const heights = tideRes.data.hourly.sea_level_height_msl;
-        const times = tideRes.data.hourly.time;
-        const list = [];
-        for (let i = 0; i < 24; i += 6) {
-          list.push({
-            type: i % 12 === 0 ? 'High' : 'Low',
-            time: new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            height: heights[i].toFixed(2)
-          });
+        if (tideRes.data?.hourly?.sea_level_height_msl) {
+          const heights = tideRes.data.hourly.sea_level_height_msl;
+          const times = tideRes.data.hourly.time;
+          const list = [];
+          for (let i = 0; i < Math.min(heights.length, 24); i += 6) {
+            const h = getVal(heights[i], 0);
+            list.push({
+              type: i % 12 === 0 ? 'High' : 'Low',
+              time: times[i] ? new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
+              height: h.toFixed(2)
+            });
+          }
+          setTides(list);
+        } else {
+          setTides([]);
         }
-        setTides(list);
-      }
     } catch (error) {
       console.error("Telemetry Sync Failed:", error);
       setApiError(true);

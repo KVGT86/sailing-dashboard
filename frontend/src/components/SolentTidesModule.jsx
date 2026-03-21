@@ -30,7 +30,11 @@ export default function SolentTidesModule() {
         </div>
         <div className="text-right">
            <span className="text-xs font-black uppercase text-red-600">Current Height</span>
-           <p className="text-2xl font-black italic text-[#0A192F]">{tides?.hourly?.sea_level_height_msl?.[0]?.toFixed(2)}m</p>
+           <p className="text-2xl font-black italic text-[#0A192F]">
+             {tides?.hourly?.sea_level_height_msl?.[0] !== undefined 
+               ? tides.hourly.sea_level_height_msl[0].toFixed(2) 
+               : '--'}m
+           </p>
         </div>
       </div>
       <div className="overflow-x-auto">

@@ -55,24 +55,61 @@ app.get('/api/recommendation', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Engine Offline" }); }
 });
 
+// Debug Route for Render Connectivity
+app.get('/api/debug/weather', async (req, res) => {
+  const results = { om: null, om_error: null, bm: null, bm_error: null };
+  try {
+    const omRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m&wind_speed_unit=kn', { timeout: 5000 });
+    results.om = omRes.data;
+  } catch (e) { results.om_error = e.message; }
+  
+  try {
+    const bmRes = await axios.get('https://www.bramblemet.co.uk/get_data.php', { timeout: 5000 });
+    results.bm = bmRes.data;
+  } catch (e) { results.bm_error = e.message; }
+  
+  res.json(results);
+});
+
 // --- CORE ROUTES (SOLENT DATA) ---
 app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
+  console.log(`[${new Date().toISOString()}] Solent Data Request`);
+  
   let weatherData = { current: { wind_speed_10m: 12, wind_direction_10m: 210, temperature_2m: 15 } };
   let marineData = { current: { wave_height: 0.3 } };
   let source = "Safe-Mode";
 
   try {
-    const wRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&wind_speed_unit=kn&timezone=GMT', { timeout: 8000 });
+    // Verified primary source for stable performance
+    const wRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&wind_speed_unit=kn&timezone=GMT', { 
+      headers: { 'Accept': 'application/json' },
+      timeout: 8000 
+    });
+
     if (wRes.data && wRes.data.current) {
       weatherData = wRes.data;
       source = "Open-Meteo (Live)";
     }
-    const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 8000 });
-    if (mRes.data && mRes.data.current) marineData = mRes.data;
 
-    res.json({ weather: weatherData, marine: marineData, source, timestamp: new Date().toISOString() });
+    const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 8000 });
+    if (mRes.data && mRes.data.current) {
+      marineData = mRes.data;
+    }
+
+    res.json({ 
+      weather: weatherData, 
+      marine: marineData, 
+      source, 
+      timestamp: new Date().toISOString() 
+    });
   } catch (err) {
-    res.json({ weather: weatherData, marine: marineData, source: "Fallback" });
+    console.error("!! Solent Proxy Failed:", err.message);
+    res.json({ 
+      weather: weatherData, 
+      marine: marineData, 
+      source: "Emergency Fallback",
+      error: err.message 
+    });
   }
 });
 
