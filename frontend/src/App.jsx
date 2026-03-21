@@ -7,6 +7,8 @@ import SailTracker from './components/SailTracker';
 import SolentMap from './components/SolentMap';
 import Settings from './components/Settings';
 import RaceTracker from './components/RaceTracker';
+import TeamCalendar from './components/TeamCalendar';
+import DailyBrief from './components/DailyBrief';
 import { API_URL } from './config';
 
 export default function App() {
@@ -78,7 +80,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex gap-4 md:gap-6 text-[10px] font-black uppercase overflow-x-auto no-scrollbar">
-          {['dashboard', 'map', 'race', 'guide', 'weather', 'sails', 'sailors', 'settings'].map(tab => (
+          {['briefing', 'map', 'race', 'guide', 'team', 'weather', 'sails', 'sailors', 'settings'].map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`transition-all pb-1 border-b-2 ${activeTab === tab ? 'text-[#ED1C24] border-[#ED1C24]' : 'text-slate-400 border-transparent hover:text-white hover:border-slate-500'}`}>
               {tab}
             </button>
@@ -89,39 +91,30 @@ export default function App() {
       <main className="container mx-auto mt-6 px-4">
         {/* LIVE MISSION CONTROL BAR */}
         <div className="bg-white p-4 rounded-xl shadow-lg mb-6 flex flex-wrap items-center justify-between border-l-8 border-[#ED1C24]">
-          <div className="flex items-center gap-3">
-            <span className="text-[9px] font-black uppercase text-slate-400 bg-slate-100 px-2 py-1 rounded">Active Crew</span>
-            <div className="flex -space-x-2">
-              {roster.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => toggleOnBoat(s)}
-                  title={s.name}
-                  className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-black uppercase transition-all shadow-sm ${
-                    s.on_boat ? 'bg-[#ED1C24] text-white z-10 scale-110' : 'bg-slate-200 text-slate-400 grayscale opacity-50'
-                  }`}
-                >
-                  {s.name.substring(0, 1)}
-                </button>
-              ))}
+          {activeTab !== 'briefing' && activeTab !== 'team' && (
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] font-black uppercase text-slate-400 bg-slate-100 px-2 py-1 rounded">Active Crew</span>
+              <div className="flex -space-x-2">
+                {roster.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => toggleOnBoat(s)}
+                    title={s.name}
+                    className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-black uppercase transition-all shadow-sm ${
+                      s.on_boat ? 'bg-[#ED1C24] text-white z-10 scale-110' : 'bg-slate-200 text-slate-400 grayscale opacity-50'
+                    }`}
+                  >
+                    {s.name.substring(0, 1)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-6">
-             <div className="text-right border-r pr-6 border-slate-100">
-                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Crew Mass</span>
-                <p className={`text-xl font-black italic leading-none ${totalWeight > 350 ? 'text-red-600' : 'text-[#1D1B44]'}`}>
-                   {totalWeight.toFixed(0)}<span className="text-[10px] uppercase not-italic ml-1 text-slate-400">KG</span>
-                </p>
-             </div>
-             <div className="text-right">
-                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Fleet Ready</span>
-                <p className="text-xl font-black italic leading-none text-green-500 uppercase">Active</p>
-             </div>
-          </div>
+          )}
+          { (activeTab === 'briefing' || activeTab === 'team') && <DailyBrief /> }
         </div>
 
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-          {activeTab === 'dashboard' && (
+          {activeTab === 'briefing' && (
             <>
               <div className="mb-4 flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase text-slate-400">Athlete Selected:</span>
@@ -136,6 +129,7 @@ export default function App() {
           {activeTab === 'map' && <SolentMap />}
           {activeTab === 'race' && <RaceTracker activeCrew={activeCrew} />}
           {activeTab === 'guide' && <SetupGuide activeCrew={activeCrew} />}
+          {activeTab === 'team' && <TeamCalendar roster={roster} />}
           {activeTab === 'weather' && <LiveConditions />}
           {activeTab === 'sails' && <SailTracker sails={sails} refresh={fetchData} />}
           {activeTab === 'settings' && <Settings roster={roster} />}

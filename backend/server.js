@@ -8,7 +8,6 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -17,7 +16,6 @@ const pool = new Pool({
 
 const API_KEY = "QYHdr2V4cZktJ7nu";
 
-// --- DATABASE & ROUTES ---
 const initDB = async () => {
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS athlete_profiles (id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, weight_kg FLOAT, height_cm FLOAT, rhr INT, max_hr INT, vo2max FLOAT, on_boat BOOLEAN DEFAULT FALSE, readiness_score INT DEFAULT 80, body_battery INT DEFAULT 100, recovery_hours INT DEFAULT 0)`);
@@ -26,6 +24,8 @@ const initDB = async () => {
     await pool.query(`CREATE TABLE IF NOT EXISTS sail_usage (id SERIAL PRIMARY KEY, sail_id TEXT REFERENCES sail_inventory(id), date DATE DEFAULT CURRENT_DATE, hours FLOAT, avg_wind FLOAT, max_wind FLOAT, notes TEXT)`);
     await pool.query(`CREATE TABLE IF NOT EXISTS race_logs (id SERIAL PRIMARY KEY, event_name TEXT, date DATE DEFAULT CURRENT_DATE, wind_speed FLOAT, wind_dir INT, result_pos INT, total_boats INT, crew_list TEXT, notes TEXT)`);
     await pool.query(`CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS athlete_availability (id SERIAL PRIMARY KEY, athlete_id INT REFERENCES athlete_profiles(id) ON DELETE CASCADE, available_date DATE NOT NULL, is_available BOOLEAN DEFAULT TRUE, UNIQUE(athlete_id, available_date))`);
+    
     await pool.query(`INSERT INTO system_config (key, value) VALUES ('wind_multiplier', '1.0') ON CONFLICT DO NOTHING`);
 
     const guideCheck = await pool.query('SELECT * FROM tuning_guide LIMIT 1').catch(() => ({rowCount: 0}));
@@ -33,7 +33,7 @@ const initDB = async () => {
       await pool.query(`INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, rake, backstay, traveller, jib_selection) VALUES 
         (1, 5, 15, 0, '+2', 1425, '0', '100% Up', 'J2+'), (6, 7, 17, 0, '+1', 1425, '0-20%', '100% Up', 'J2+'), (8, 10, 19, 9, 'BASE', 1425, '0-40%', '50-100%', 'J2+'), (11, 12, 21, 13, 'BASE', 1425, '30-50%', '40-75%', 'J2+'), (13, 13, 23, 16, '-1', 1425, '40-60%', '20-40%', 'J2+'), (14, 14, 24, 21, '-1', 1425, '50-70%', '10-30%', 'J6'), (15, 15, 26, 23, '-2', 1425, '60-80%', '1Car Up', 'J6'), (16, 16, 27, 27, '-2', 1425, '80-100%', '1Car Up', 'J6'), (17, 18, 28, 28, '-3', 1425, '100%', '1Car Up', 'J6'), (19, 19, 29, 30, '-3', 1425, '100%', '1Car Up', 'J6'), (20, 30, 30, 32, '-4', 1425, '100%', 'Centred-1Car Down', 'J6')`).catch(e => console.log("Guide Seed Skip"));
     }
-    console.log("⚓ GBR 1381 ENGINE INITIALISED (V2 PRO)");
+    console.log("⚓ GBR 1381 PRO ENGINE (V3) INITIALISED");
   } catch (err) { console.error("❌ Init Error:", err.message); }
 };
 initDB();
@@ -43,7 +43,7 @@ const getWindMultiplier = async () => { try { const r = await pool.query("SELECT
 let weatherCache = { data: null, expiry: 0 };
 const CACHE_DURATION = 30 * 60 * 1000;
 
-app.get('/', (req, res) => res.send("🚀 GBR 1381 BACKEND ACTIVE"));
+app.get('/', (req, res) => res.send("🚀 GBR 1381 BACKEND ACTIVE (V3)"));
 app.get('/api/health', (req, res) => res.json({ status: "OK" }));
 
 app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
@@ -153,6 +153,14 @@ app.post('/api/system/calibrate', async (req, res) => {
 app.get('/api/sails', async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM sail_inventory ORDER BY hours_flown ASC');
+    res.json(r.rows);
+  } catch (e) { res.json([]); }
+});
+
+app.get('/api/sails/:id/usage', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await pool.query("SELECT * FROM sail_usage WHERE sail_id = $1 ORDER BY date DESC", [id]);
     res.json(r.rows);
   } catch (e) { res.json([]); }
 });
