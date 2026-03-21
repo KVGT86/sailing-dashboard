@@ -9,87 +9,72 @@ export default function LiveConditions() {
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState(false);
 
-  useEffect(() => {
-    const fetchLiveConditions = async () => {
-      try {
-        // Calling your NEW backend routes
-        const [weatherRes, tideRes] = await Promise.all([
-          axios.get(`${API_URL}/weather/solent`),
-          axios.get(`${API_URL}/tides/portsmouth`)
-        ]);
+  const fetchLiveConditions = async () => {
+    setIsLoading(true);
+    setApiError(false);
+    try {
+      const [weatherRes, tideRes] = await Promise.all([
+        axios.get(`${API_URL}/solent`),
+        axios.get(`${API_URL}/tides/solent`)
+      ]);
 
-        const data = weatherRes.data || {};
-        // Extreme defensive parsing to handle structural variations
-        const current = data.weather?.current || data.current || {};
-        
-        const wSpd = current.wind_speed_10m ?? 12;
-        const wDir = current.wind_direction_10m ?? 210;
-        const wGust = current.wind_gusts_10m ?? (wSpd * 1.2);
+      const data = weatherRes.data || {};
+      const current = data.weather?.current || {};
+      
+      setWeather({
+        windSpeed: (current.wind_speed_10m || 12).toFixed(1),
+        windGust: (current.wind_gusts_10m || (current.wind_speed_10m * 1.2) || 14).toFixed(1),
+        windDirection: current.wind_direction_10m || 210,
+        temp: Math.round(current.temperature_2m || 15),
+        humidity: current.relative_humidity_2m || 70,
+        source: data.source || "System Default"
+      });
 
-        setWeather({
-          windSpeed: Number(wSpd).toFixed(1),
-          windGust: Number(wGust).toFixed(1),
-          windDirection: wDir,
-          temp: Math.round(current.temperature_2m ?? 15),
-          humidity: current.relative_humidity_2m ?? 70,
-          source: data.source || "System Default"
-        });
-
-        // Tide Parsing with safety
-        if (tideRes.data?.hourly?.sea_level_height_msl) {
-          const times = tideRes.data.hourly.time;
-          const heights = tideRes.data.hourly.sea_level_height_msl;
-          const list = [];
-          for (let i = 0; i < Math.min(times.length, 24); i += 6) {
-            list.push({
-              type: i % 12 === 0 ? 'High' : 'Low',
-              time: new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              height: Number(heights[i] || 0).toFixed(2)
-            });
-          }
-          setTides(list);
-        } else {
-          setTides([]);
+      if (tideRes.data?.hourly?.sea_level_height_msl) {
+        const heights = tideRes.data.hourly.sea_level_height_msl;
+        const times = tideRes.data.hourly.time;
+        const list = [];
+        for (let i = 0; i < 24; i += 6) {
+          list.push({
+            type: i % 12 === 0 ? 'High' : 'Low',
+            time: new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            height: heights[i].toFixed(2)
+          });
         }
-
-      } catch (error) {
-        console.error("API Fetch Error:", error);
-        setApiError(true);
-      } finally {
-        setIsLoading(false);
+        setTides(list);
       }
-    };
+    } catch (error) {
+      console.error("Telemetry Sync Failed:", error);
+      setApiError(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchLiveConditions();
-    const interval = setInterval(fetchLiveConditions, 600000); // Refresh every 10 mins
+    const interval = setInterval(fetchLiveConditions, 300000); // 5 mins
     return () => clearInterval(interval);
   }, []);
 
-  if (isLoading) return <div className="p-6 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase tracking-widest">Scanning Solent Sensors...</div>;
-
-  if (apiError) return (
-    <div className="p-6 max-w-2xl mx-auto mt-10 bg-red-50 border-l-8 border-[#ED1C24] rounded shadow-lg">
-      <h3 className="text-xl font-black text-red-800 uppercase italic">Telemetry Connection Failed</h3>
-      <p className="text-red-700 mt-2 font-bold">The GBR 1381 Backend is currently offline or waking up. Please wait 30 seconds and refresh.</p>
-    </div>
-  );
+  if (isLoading && !weather) return <div className="p-6 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase tracking-widest text-center">Syncing Solent Buoys...</div>;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-700">
       
-      {/* HEADER SECTION */}
       <div className="bg-[#1D1B44] text-white p-6 rounded-xl shadow-2xl flex justify-between items-center border-b-4 border-[#ED1C24]">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2">
             <MapPin className="text-[#ED1C24]" /> Solent Live Conditions
           </h2>
-          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Satellite Sync: Active // GBR 1381</p>
+          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Source: {weather?.source || 'Detecting...'}</p>
         </div>
-        <div className="text-right hidden md:block">
-          <div className="text-green-400 font-black text-xs uppercase flex items-center gap-2">
-            <span className="h-2 w-2 bg-green-400 rounded-full animate-ping"></span> Live Data Stream
-          </div>
-        </div>
+        <button 
+          onClick={fetchLiveConditions}
+          className="bg-[#ED1C24] hover:bg-white hover:text-[#1D1B44] text-white px-4 py-2 rounded font-black text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95"
+        >
+          {isLoading ? 'Syncing...' : 'Force Satellite Sync'}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

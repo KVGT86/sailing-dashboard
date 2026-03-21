@@ -145,6 +145,17 @@ export default function App() {
           )}
         </div>
       </main>
+
+      <footer className="mt-10 border-t border-slate-200 p-6 text-center">
+        <div className="inline-flex items-center gap-4 bg-white px-4 py-2 rounded-full shadow-sm border">
+           <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${API_URL.includes('localhost') ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}></div>
+              <span className="text-[10px] font-black uppercase text-slate-500">Backend: {API_URL.includes('localhost') ? 'LOCAL (ACTIVE)' : 'PROD (CLOUDSYNC)'}</span>
+           </div>
+           <div className="h-4 w-px bg-slate-200"></div>
+           <span className="text-[10px] font-black uppercase text-[#ED1C24]">Project Blueberry // GBR 1381</span>
+        </div>
+      </footer>
     </div>
   );
 }
