@@ -46,31 +46,60 @@ app.get('/api/debug/outbound', async (req, res) => {
   res.json(results);
 });
 
+// --- API CACHING ENGINE (To save Meteoblue Credits) ---
+let weatherCache = { data: null, expiry: 0 };
+let tideCache = { data: null, expiry: 0 };
+const CACHE_DURATION = 30 * 60 * 1000; // 30 Minutes
+
 app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
+  const now = Date.now();
+  if (weatherCache.data && now < weatherCache.expiry) {
+    return res.json({ ...weatherCache.data, source: weatherCache.data.source + " (Cached)" });
+  }
+
   try {
-    const mbRes = await axios.get(`https://my.meteoblue.com/packages/basic-1h?apikey=${API_KEY}&lat=50.79&lon=-1.10&format=json`, { timeout: 5000 });
+    const mbRes = await axios.get(`https://my.meteoblue.com/packages/basic-1h?apikey=${API_KEY}&lat=50.79&lon=-1.10&format=json`, { timeout: 8000 });
     if (mbRes.data && mbRes.data.data_1h) {
       const mb = mbRes.data.data_1h;
-      return res.json({
-        weather: { current: { wind_speed_10m: mb.windspeed[0], wind_direction_10m: mb.winddirection[0], temperature_2m: mb.temperature[0], relative_humidity_2m: mb.relativehumidity[0] } },
-        marine: { current: { wave_height: 0.4 } },
-        source: "Meteoblue (Pro)",
-        timestamp: new Date().toISOString()
-      });
+      const weatherData = {
+        current: {
+          wind_speed_10m: mb.windspeed[0],
+          wind_direction_10m: mb.winddirection[0],
+          temperature_2m: mb.temperature[0],
+          relative_humidity_2m: mb.relativehumidity[0]
+        }
+      };
+      
+      const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 5000 }).catch(() => null);
+      const marineData = (mRes && mRes.data && mRes.data.current) ? mRes.data : { current: { wave_height: 0.4 } };
+
+      weatherCache = {
+        data: { weather: weatherData, marine: marineData, source: "Meteoblue (Pro)" },
+        expiry: now + CACHE_DURATION
+      };
+      return res.json({ ...weatherCache.data, timestamp: new Date().toISOString() });
     }
-    throw new Error("Empty API Response");
+    throw new Error("Invalid Response");
   } catch (err) {
-    console.warn("Using Synthetic Fallback:", err.message);
     res.json(getSyntheticSolent());
   }
 });
 
 app.get(['/api/tides/solent', '/api/tides/portsmouth'], async (req, res) => {
+  const now = Date.now();
+  if (tideCache.data && now < tideCache.expiry) {
+    return res.json(tideCache.data);
+  }
+
   try {
-    const resTide = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT', { timeout: 4000 });
+    const resTide = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT', { timeout: 5000 });
+    tideCache = {
+      data: resTide.data,
+      expiry: now + CACHE_DURATION
+    };
     res.json(resTide.data);
   } catch (err) {
-    // Synthetic Tides
+    // Synthetic Tides Fallback
     const times = []; const heights = [];
     for(let i=0; i<48; i++) {
       const d = new Date(); d.setHours(d.getHours() + i);
