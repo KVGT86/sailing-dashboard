@@ -51,10 +51,14 @@ export default function SetupGuide({ activeCrew }) {
              <p className="text-xl font-black text-[#ED1C24] italic uppercase">{data?.recommended_sail || 'J2+'}</p>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4 mt-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <StatBox label="Crew Weight" val={`${totalWeight.toFixed(0)}kg`} />
           <StatBox label="Live Wind" val={`${wind.toFixed(1)} kts`} />
           <StatBox label="Sea State" val={`${data?.conditions?.sea}m`} />
+          <div className="bg-white/10 p-3 rounded-lg border border-white/10">
+            <p className="text-[9px] uppercase font-bold text-slate-400">Data Source</p>
+            <p className="text-[10px] font-black italic uppercase text-[#ED1C24] leading-tight mt-1">{data?.source || 'Detecting...'}</p>
+          </div>
         </div>
       </div>
 

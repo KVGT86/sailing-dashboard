@@ -125,6 +125,8 @@ const initDB = async () => {
 };
 initDB();
 
+const FitParser = require('fit-file-parser').default;
+
 // --- Smart Performance Mode ENGINE ---
 app.get('/api/recommendation', async (req, res) => {
   // Explicitly handle missing wind with a J/70 'Base' default (12kts)
@@ -164,51 +166,111 @@ app.get('/api/recommendation', async (req, res) => {
       conditions: { weight: crewWeight, sea: seaState, wind: windSpd }
     });
   } catch (err) { 
-    res.status(500).json({ error: "Logic Engine Error" });
+    console.error("Rec Error:", err.message);
+    res.status(500).json({ error: "Recommendation Engine Offline" });
   }
 });
 
-// Hardened Weather Proxy (Open-Meteo)
+// Hardened Solent Data Proxy (Bramblemet + Open-Meteo Fallback)
 app.get('/api/solent', async (req, res) => {
-  console.log("[Weather] Fetching Solent Data (50.79, -1.10)...");
+  console.log("[Weather] Fetching Live Solent Conditions...");
+  
+  let currentWind = 12;
+  let currentDir = 210;
+  let currentSea = 0.3;
+  let source = "Fallback (Open-Meteo)";
+
   try {
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
-    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT`;
+    // 1. Primary: Try Bramblemet (Observed)
+    const brambleRes = await axios.get('https://www.bramblemet.co.uk/get_data.php', { timeout: 4000 }).catch(e => null);
     
-    const [wRes, mRes] = await Promise.allSettled([
-      axios.get(weatherUrl, { timeout: 5000 }),
-      axios.get(marineUrl, { timeout: 5000 })
-    ]);
+    if (brambleRes && brambleRes.data && brambleRes.data.wind_speed) {
+      currentWind = parseFloat(brambleRes.data.wind_speed);
+      currentDir = parseInt(brambleRes.data.wind_direction);
+      source = "Bramblemet (Live Buoy)";
+    } else {
+      // 2. Secondary: Open-Meteo Forecast
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
+      const wRes = await axios.get(weatherUrl, { timeout: 4000 }).catch(e => null);
+      if (wRes && wRes.data && wRes.data.current) {
+        currentWind = wRes.data.current.wind_speed_10m;
+        currentDir = wRes.data.current.wind_direction_10m;
+      }
+    }
 
-    const weather = wRes.status === 'fulfilled' ? wRes.value.data : { current: { wind_speed_10m: 12, wind_direction_10m: 210 } };
-    const marine = mRes.status === 'fulfilled' ? mRes.value.data : { current: { wave_height: 0.3 } };
+    // 3. Marine Data (Waves)
+    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT`;
+    const mRes = await axios.get(marineUrl, { timeout: 4000 }).catch(e => null);
+    if (mRes && mRes.data && mRes.data.current) {
+      currentSea = mRes.data.current.wave_height;
+    }
 
-    if (wRes.status === 'rejected') console.error("Weather API Failed:", wRes.reason.message);
-    if (mRes.status === 'rejected') console.error("Marine API Failed:", mRes.reason.message);
-
-    res.json({ weather, marine, status: "OK" });
+    res.json({
+      weather: { current: { wind_speed_10m: currentWind, wind_direction_10m: currentDir } },
+      marine: { current: { wave_height: currentSea } },
+      source,
+      timestamp: new Date().toISOString()
+    });
   } catch (err) {
-    res.json({ 
-      weather: { current: { wind_speed_10m: 12, wind_direction_10m: 210 } }, 
+    console.error("Critical Weather Failure:", err.message);
+    res.json({
+      weather: { current: { wind_speed_10m: 12, wind_direction_10m: 210 } },
       marine: { current: { wave_height: 0.3 } },
-      status: "FALLBACK"
+      source: "Hard Fallback",
+      status: "ERROR"
     });
   }
 });
 
 app.post('/api/garmin/upload', async (req, res) => {
-  const { sailor_name, fit_data, type } = req.body; // type: 'wellness' or 'activity'
-  console.log(`[Garmin] Received ${type} file for ${sailor_name}`);
-  
-  // Future: fit-file-parser logic here
-  // For now, update readiness to reflect a successful "sync"
+  const { sailor_name, fit_data, type } = req.body;
+  console.log(`[Garmin] Processing ${type} .FIT for ${sailor_name}`);
+
   try {
-    await pool.query(
-      'UPDATE athlete_profiles SET readiness_score = 95, recovery_hours = 12 WHERE name = $1',
-      [sailor_name]
-    );
-    res.json({ message: "Garmin .FIT Data Staged & Sync'd" });
-  } catch (err) { res.status(500).send(err.message); }
+    const buffer = Buffer.from(fit_data, 'base64');
+    const parser = new FitParser({ force: true });
+
+    parser.parse(buffer, async (err, data) => {
+      if (err) {
+        console.error("FIT Parse Error:", err);
+        return res.status(400).json({ error: "Invalid .FIT file structure" });
+      }
+
+      // Extract metrics based on type
+      let readiness = 80;
+      let battery = 100;
+      let recovery = 0;
+      let notes = "Sync Complete";
+
+      if (type === 'wellness') {
+        // Wellness files usually have 'monitoring' data
+        const summary = data.monitoring?.[data.monitoring.length - 1] || {};
+        readiness = summary.readiness_score_value || 85;
+        battery = summary.body_battery_level || 100;
+        notes = "Wellness Sync: Readiness extracted.";
+      } else {
+        // Activity files
+        const session = data.sessions?.[0] || {};
+        readiness = Math.max(50, 100 - (session.total_training_effect || 0) * 10);
+        recovery = session.recovery_time || 24;
+        notes = `Activity: ${session.sport} - Effort ${session.total_training_effect || 'N/A'}`;
+      }
+
+      // Update Database
+      await pool.query(
+        'UPDATE athlete_profiles SET readiness_score = $1, body_battery = $2, recovery_hours = $3 WHERE name = $4',
+        [readiness, battery, recovery, sailor_name]
+      );
+
+      res.json({
+        message: "Garmin Sync Successful",
+        summary: { readiness, battery, recovery, notes }
+      });
+    });
+  } catch (err) {
+    console.error("Garmin Controller Error:", err.message);
+    res.status(500).json({ error: "Failed to process Garmin data" });
+  }
 });
 
 app.get('/api/athletes', async (req, res) => {

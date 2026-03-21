@@ -19,16 +19,18 @@ export default function Settings({ roster }) {
     reader.readAsDataURL(file);
   };
 
+  const [syncSummary, setSyncSummary] = useState(null);
+
   const syncGarmin = async () => {
     if (!fileData || !selectedSailor) return;
     setLoading(true);
     try {
-      await axios.post(`${API_URL}/garmin/upload`, {
+      const res = await axios.post(`${API_URL}/garmin/upload`, {
         sailor_name: selectedSailor,
         fit_data: fileData,
         type: uploadType
       });
-      alert(`Garmin ${uploadType.toUpperCase()} Sync Successful for ${selectedSailor}`);
+      setSyncSummary(res.data.summary);
       setFileData(null);
     } catch (err) {
       alert("Sync Failed: " + err.message);
@@ -42,6 +44,26 @@ export default function Settings({ roster }) {
       <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-slate-800">
         <h2 className="font-black italic uppercase text-slate-800 mb-4">Garmin Tactical Sync (.FIT)</h2>
         
+        {syncSummary && (
+          <div className="mb-6 p-4 bg-green-50 border-2 border-green-200 rounded-xl animate-in fade-in zoom-in duration-300">
+             <h3 className="text-xs font-black uppercase text-green-700 mb-2">Sync Report: {selectedSailor}</h3>
+             <div className="grid grid-cols-3 gap-4">
+                <div>
+                   <p className="text-[8px] font-bold text-green-600 uppercase">Readiness</p>
+                   <p className="text-xl font-black text-green-800">{syncSummary.readiness}</p>
+                </div>
+                <div>
+                   <p className="text-[8px] font-bold text-green-600 uppercase">Body Battery</p>
+                   <p className="text-xl font-black text-green-800">{syncSummary.battery}%</p>
+                </div>
+                <div>
+                   <p className="text-[8px] font-bold text-green-600 uppercase">Recovery</p>
+                   <p className="text-xl font-black text-green-800">{syncSummary.recovery}h</p>
+                </div>
+             </div>
+             <p className="mt-2 text-[9px] font-bold text-green-600 italic uppercase">{syncSummary.notes}</p>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="p-4 bg-blue-50 border-l-4 border-blue-600 rounded">
                 <h3 className="text-[10px] font-black uppercase text-blue-800 mb-1">Wellness Data</h3>
