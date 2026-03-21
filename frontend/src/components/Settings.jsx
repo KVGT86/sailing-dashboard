@@ -39,8 +39,45 @@ export default function Settings({ roster }) {
     }
   };
 
+  const [multiplier, setMultiplier] = useState(1.0);
+
+  const saveCalibration = async () => {
+    try {
+      await axios.post(`${API_URL}/system/calibrate`, { multiplier });
+      alert("Calibration saved. GBR 1381 Engine recalibrated.");
+    } catch (e) { alert("Failed to save calibration."); }
+  };
+
   return (
     <div className="space-y-6">
+      {/* CALIBRATION HUD */}
+      <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-red-600">
+        <h2 className="font-black italic uppercase text-slate-800 mb-4">Tactical Calibration</h2>
+        <p className="text-[10px] text-slate-500 mb-6 uppercase font-bold tracking-tight">Sync the digital model with your real-world observations.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+          <div>
+            <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Wind Speed Multiplier</label>
+            <div className="flex items-center gap-4">
+              <input 
+                type="range" min="0.5" max="3.0" step="0.1" 
+                value={multiplier} 
+                onChange={(e) => setMultiplier(parseFloat(e.target.value))}
+                className="flex-1 accent-red-600"
+              />
+              <span className="text-xl font-black italic text-red-600 w-12">{multiplier}x</span>
+            </div>
+            <p className="text-[8px] text-slate-400 mt-2 italic font-bold">Use 2.0x if Chimet reports 5kts and app says 2.5kts.</p>
+          </div>
+          <button 
+            onClick={saveCalibration}
+            className="bg-red-600 text-white p-4 rounded-lg font-black uppercase italic tracking-widest shadow-lg hover:bg-[#1D1B44] transition-all"
+          >
+            Apply Recalibration
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-slate-800">
         <h2 className="font-black italic uppercase text-slate-800 mb-4">Garmin Tactical Sync (.FIT)</h2>
         
