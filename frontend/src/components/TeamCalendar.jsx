@@ -6,16 +6,17 @@ import { ChevronLeft, ChevronRight, UserCheck, UserX } from 'lucide-react';
 export default function TeamCalendar({ roster }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedSailorId, setSelectedSailorId] = useState(roster[0]?.id);
-  const [availability, setAvailability] = useState({});
+  const [availability, setAvailability] = useState({}); // Stores day -> is_available
 
   const fetchAvailability = async () => {
     if (!selectedSailorId) return;
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1;
+    const year = currentDate.getUTCFullYear();
+    const month = currentDate.getUTCMonth() + 1;
     try {
       const res = await axios.get(`${API_URL}/athletes/${selectedSailorId}/availability?year=${year}&month=${month}`);
       const availMap = res.data.reduce((acc, item) => {
-        acc[new Date(item.available_date).getDate()] = item.is_available;
+        const dayOfMonth = new Date(item.available_date).getUTCDate();
+        acc[dayOfMonth] = item.is_available;
         return acc;
       }, {});
       setAvailability(availMap);
@@ -27,21 +28,26 @@ export default function TeamCalendar({ roster }) {
   }, [currentDate, selectedSailorId]);
 
   const toggleDay = async (day) => {
-    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    if (!selectedSailorId) return;
+    const date = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), day));
     const dateString = date.toISOString().split('T')[0];
-    const currentStatus = availability[day] ?? true; // Default to available
+    
+    // If availability for 'day' is not set, it defaults to available (true).
+    const currentStatus = availability[day] ?? true; 
+    
     try {
       await axios.post(`${API_URL}/athletes/availability`, {
         athlete_id: selectedSailorId,
         date: dateString,
         is_available: !currentStatus
       });
+      // Immediately update local state for responsive UI
       setAvailability(prev => ({ ...prev, [day]: !currentStatus }));
-    } catch (e) { alert("Failed to update status."); }
+    } catch (e) { alert("Failed to update status. Check backend connection."); }
   };
-
-  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  
+  const daysInMonth = new Date(currentDate.getUTCFullYear(), currentDate.getUTCMonth() + 1, 0).getUTCDate();
+  const firstDay = new Date(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), 1).getUTCDay();
 
   return (
     <div className="bg-white p-8 rounded-2xl shadow-2xl border-t-8 border-[#ED1C24]">
@@ -55,25 +61,23 @@ export default function TeamCalendar({ roster }) {
         </select>
       </div>
 
-      {/* Calendar Controls */}
       <div className="flex justify-between items-center mb-4">
-        <button onClick={() => setCurrentDate(d => new Date(d.setMonth(d.getMonth() - 1)))} className="p-2 rounded-full hover:bg-slate-100"><ChevronLeft/></button>
-        <h3 className="text-xl font-black uppercase text-center text-[#ED1C24]">{currentDate.toLocaleString('default', { month: 'long' })} {currentDate.getFullYear()}</h3>
-        <button onClick={() => setCurrentDate(d => new Date(d.setMonth(d.getMonth() + 1)))} className="p-2 rounded-full hover:bg-slate-100"><ChevronRight/></button>
+        <button onClick={() => setCurrentDate(d => new Date(d.setUTCMonth(d.getUTCMonth() - 1)))} className="p-2 rounded-full hover:bg-slate-100"><ChevronLeft/></button>
+        <h3 className="text-xl font-black uppercase text-center text-[#ED1C24]">{currentDate.toLocaleString('default', { month: 'long', timeZone: 'UTC' })} {currentDate.getUTCFullYear()}</h3>
+        <button onClick={() => setCurrentDate(d => new Date(d.setUTCMonth(d.getUTCMonth() + 1)))} className="p-2 rounded-full hover:bg-slate-100"><ChevronRight/></button>
       </div>
 
-      {/* Calendar Grid */}
       <div className="grid grid-cols-7 gap-1">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <div key={d} className="text-center font-black text-slate-400 text-xs uppercase">{d}</div>)}
         {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`}></div>)}
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const day = i + 1;
-          const isAvailable = availability[day] ?? true; // Default to available
+          const isAvailable = availability[day] ?? true;
           return (
             <button 
               key={day} 
               onClick={() => toggleDay(day)}
-              className={`p-4 border-2 rounded-lg text-center font-black transition-all ${isAvailable ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-800'}`}
+              className={`p-4 border-2 rounded-lg text-center font-black transition-all duration-150 ease-in-out ${isAvailable ? 'bg-green-50 border-green-100 text-green-800 hover:bg-green-100 hover:border-green-300' : 'bg-red-50 border-red-100 text-red-800 hover:bg-red-100 hover:border-red-300'}`}
             >
               {day}
               {isAvailable ? <UserCheck className="mx-auto mt-1 opacity-50" size={14}/> : <UserX className="mx-auto mt-1 opacity-50" size={14}/>}
