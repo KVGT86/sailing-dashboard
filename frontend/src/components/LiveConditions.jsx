@@ -12,23 +12,29 @@ export default function LiveConditions() {
   const fetchLiveConditions = async () => {
     setIsLoading(true);
     setApiError(false);
-    try {
-      const [weatherRes, tideRes] = await Promise.all([
-        axios.get(`${API_URL}/solent`),
-        axios.get(`${API_URL}/tides/solent`)
-      ]);
+      try {
+        const [weatherRes, tideRes] = await Promise.all([
+          axios.get(`${API_URL}/solent`),
+          axios.get(`${API_URL}/tides/solent`)
+        ]);
 
-      const data = weatherRes.data || {};
-      const current = data.weather?.current || {};
-      
-      setWeather({
-        windSpeed: (current.wind_speed_10m || 12).toFixed(1),
-        windGust: (current.wind_gusts_10m || (current.wind_speed_10m * 1.2) || 14).toFixed(1),
-        windDirection: current.wind_direction_10m || 210,
-        temp: Math.round(current.temperature_2m || 15),
-        humidity: current.relative_humidity_2m || 70,
-        source: data.source || "System Default"
-      });
+        const data = weatherRes.data || {};
+        const weatherObj = data.weather || {};
+        const current = weatherObj.current || data.current || {};
+        
+        // Final Bulletproof Parsing
+        const rawSpd = current.wind_speed_10m ?? current.wind_speed ?? 12;
+        const rawDir = current.wind_direction_10m ?? current.wind_direction ?? 210;
+        const rawGust = current.wind_gusts_10m ?? (rawSpd * 1.2);
+
+        setWeather({
+          windSpeed: Number(rawSpd).toFixed(1),
+          windGust: Number(rawGust).toFixed(1),
+          windDirection: Number(rawDir),
+          temp: Math.round(current.temperature_2m ?? 15),
+          humidity: current.relative_humidity_2m ?? 70,
+          source: data.source || "System Default"
+        });
 
       if (tideRes.data?.hourly?.sea_level_height_msl) {
         const heights = tideRes.data.hourly.sea_level_height_msl;

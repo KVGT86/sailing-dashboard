@@ -1,7 +1,8 @@
-// This checks if the app is running on your computer or on the web
-const IS_PRODUCTION = import.meta.env.PROD;
+const IS_DEV = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-// Replace 'lightfoot-backend' with the actual name Render gives you
-export const API_URL = IS_PRODUCTION 
-    ? "https://lightfoot-backend.onrender.com/api" 
-    : "http://localhost:5222/api";
+// If you want to force Render even when developing locally, set this to false
+const USE_LOCAL_BACKEND = false; 
+
+export const API_URL = (IS_DEV && USE_LOCAL_BACKEND)
+    ? "http://localhost:5222/api" 
+    : "https://lightfoot-backend.onrender.com/api";

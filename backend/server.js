@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const axios = require('axios');
-const FitParser = require('fit-file-parser').default;
 require('dotenv').config();
 
 const app = express();
@@ -27,10 +26,14 @@ const initDB = async () => {
       await pool.query(`INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, rake, backstay, traveller, jib_selection) VALUES 
         (1, 5, 15, 0, '+2', 1425, '0', '100% Up', 'J2+'), (6, 7, 17, 0, '+1', 1425, '0-20%', '100% Up', 'J2+'), (8, 10, 19, 9, 'BASE', 1425, '0-40%', '50-100%', 'J2+'), (11, 12, 21, 13, 'BASE', 1425, '30-50%', '40-75%', 'J2+'), (13, 13, 23, 16, '-1', 1425, '40-60%', '20-40%', 'J2+'), (14, 14, 24, 21, '-1', 1425, '50-70%', '10-30%', 'J6'), (15, 15, 26, 23, '-2', 1425, '60-80%', '1Car Up', 'J6'), (16, 16, 27, 27, '-2', 1425, '80-100%', '1Car Up', 'J6'), (17, 18, 28, 28, '-3', 1425, '100%', '1Car Up', 'J6'), (19, 19, 29, 30, '-3', 1425, '100%', '1Car Up', 'J6'), (20, 30, 30, 32, '-4', 1425, '100%', 'Centred-1Car Down', 'J6')`);
     }
-    console.log("⚓ GBR 1381 Smart Engine Live & Seeded");
-  } catch (err) { console.error("❌ Init Error:", err); }
+    console.log("⚓ GBR 1381 Smart Engine Live");
+  } catch (err) { console.error("❌ Init Error:", err.message); }
 };
 initDB();
+
+// Root route for verification
+app.get('/', (req, res) => res.send("🚀 GBR 1381 BACKEND ACTIVE"));
+app.get('/api/health', (req, res) => res.json({ status: "OK", db: pool ? "CONNECTED" : "OFFLINE" }));
 
 // --- SMART PERFORMANCE ENGINE ---
 app.get('/api/recommendation', async (req, res) => {
@@ -52,41 +55,24 @@ app.get('/api/recommendation', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Engine Offline" }); }
 });
 
-const fs = require('fs');
-const logFile = 'weather_debug.log';
-
+// --- CORE ROUTES (SOLENT DATA) ---
 app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
-  console.log("-> Solent Request Received");
   let weatherData = { current: { wind_speed_10m: 12, wind_direction_10m: 210, temperature_2m: 15 } };
   let marineData = { current: { wave_height: 0.3 } };
   let source = "Safe-Mode";
 
   try {
-    fs.appendFileSync(logFile, `${new Date().toISOString()}: Attempting Open-Meteo...\n`);
-    
-    const wRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&wind_speed_unit=kn&timezone=GMT', { 
-      headers: { 'Accept': 'application/json' },
-      timeout: 8000 
-    });
-
+    const wRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&wind_speed_unit=kn&timezone=GMT', { timeout: 8000 });
     if (wRes.data && wRes.data.current) {
       weatherData = wRes.data;
       source = "Open-Meteo (Live)";
-      fs.appendFileSync(logFile, `Success: ${weatherData.current.wind_speed_10m}kts\n`);
-    } else {
-      fs.appendFileSync(logFile, `Partial Failure: No current data block\n`);
     }
-
     const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 8000 });
-    if (mRes.data && mRes.data.current) {
-      marineData = mRes.data;
-    }
+    if (mRes.data && mRes.data.current) marineData = mRes.data;
 
     res.json({ weather: weatherData, marine: marineData, source, timestamp: new Date().toISOString() });
   } catch (err) {
-    fs.appendFileSync(logFile, `Error: ${err.message}\n`);
-    console.error("!! Fetch Error:", err.message);
-    res.json({ weather: weatherData, marine: marineData, source: `Error: ${err.message.substring(0,10)}` });
+    res.json({ weather: weatherData, marine: marineData, source: "Fallback" });
   }
 });
 
@@ -98,24 +84,27 @@ app.get(['/api/tides/solent', '/api/tides/portsmouth'], async (req, res) => {
 });
 
 app.get('/api/history', async (req, res) => {
-  const r = await pool.query('SELECT * FROM tuning_logs ORDER BY date DESC LIMIT 20');
-  res.json(r.rows);
+  try {
+    const r = await pool.query('SELECT * FROM tuning_logs ORDER BY date DESC LIMIT 20');
+    res.json(r.rows);
+  } catch (err) { res.json([]); }
 });
 
 app.post('/api/garmin/upload', async (req, res) => {
   const { sailor_name, fit_data, type } = req.body;
   try {
+    const FitParser = require('fit-file-parser').default || require('fit-file-parser');
     const buffer = Buffer.from(fit_data, 'base64');
     const parser = new FitParser({ force: true });
     parser.parse(buffer, async (err, data) => {
       if (err) return res.status(400).json({ error: "Invalid .FIT" });
       let readiness = 85, battery = 100, recovery = 0;
       if (type === 'wellness') {
-        const summary = data.monitoring?.[data.monitoring.length - 1] || {};
+        const summary = (data.monitoring || [])[data.monitoring?.length - 1] || {};
         readiness = summary.readiness_score_value || 85;
         battery = summary.body_battery_level || 100;
       } else {
-        const session = data.sessions?.[0] || {};
+        const session = (data.sessions || [])[0] || {};
         readiness = Math.max(50, 100 - (session.total_training_effect || 0) * 10);
         recovery = session.recovery_time || 24;
       }
@@ -160,4 +149,4 @@ app.get('/api/admin/reset-db', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5222;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 GBR 1381 ACTIVE`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 GBR 1381 ONLINE`));
