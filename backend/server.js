@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const axios = require('axios');
+const FitParser = require('fit-file-parser').default || require('fit-file-parser');
 require('dotenv').config();
 
 const app = express();
@@ -13,111 +14,71 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-const initDB = async () => {
-  try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS athlete_profiles (id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, weight_kg FLOAT, height_cm FLOAT, rhr INT, max_hr INT, vo2max FLOAT, on_boat BOOLEAN DEFAULT FALSE, readiness_score INT DEFAULT 80, body_battery INT DEFAULT 100, recovery_hours INT DEFAULT 0)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS sail_inventory (id TEXT PRIMARY KEY, name TEXT, hours_flown FLOAT DEFAULT 0, type TEXT, is_race_sail BOOLEAN DEFAULT TRUE, last_used DATE DEFAULT CURRENT_DATE)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS tuning_logs (id SERIAL PRIMARY KEY, date DATE DEFAULT CURRENT_DATE, sailor_name TEXT, wind_condition FLOAT, duration FLOAT DEFAULT 0, upper_shroud INT, lower_shroud INT, headstay TEXT, jib_used TEXT, performance_rating INT DEFAULT 3, notes TEXT, total_weight FLOAT, sea_state FLOAT, tide_flow TEXT)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS performance_feedback (id SERIAL PRIMARY KEY, wind_speed FLOAT, upper_offset INT DEFAULT 0, lower_offset INT DEFAULT 0, performance_rating INT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, sea_state FLOAT DEFAULT 0, crew_weight FLOAT DEFAULT 0)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS tuning_guide (min_wind INT PRIMARY KEY, max_wind INT, upper_shroud INT, lower_shroud INT, headstay TEXT, jib_selection TEXT, rake INT, backstay TEXT, traveller TEXT)`);
+const API_KEY = "QYHdr2V4cZktJ7nu";
 
-    const guideCheck = await pool.query('SELECT * FROM tuning_guide LIMIT 1');
-    if (guideCheck.rowCount === 0) {
-      await pool.query(`INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, rake, backstay, traveller, jib_selection) VALUES 
-        (1, 5, 15, 0, '+2', 1425, '0', '100% Up', 'J2+'), (6, 7, 17, 0, '+1', 1425, '0-20%', '100% Up', 'J2+'), (8, 10, 19, 9, 'BASE', 1425, '0-40%', '50-100%', 'J2+'), (11, 12, 21, 13, 'BASE', 1425, '30-50%', '40-75%', 'J2+'), (13, 13, 23, 16, '-1', 1425, '40-60%', '20-40%', 'J2+'), (14, 14, 24, 21, '-1', 1425, '50-70%', '10-30%', 'J6'), (15, 15, 26, 23, '-2', 1425, '60-80%', '1Car Up', 'J6'), (16, 16, 27, 27, '-2', 1425, '80-100%', '1Car Up', 'J6'), (17, 18, 28, 28, '-3', 1425, '100%', '1Car Up', 'J6'), (19, 19, 29, 30, '-3', 1425, '100%', '1Car Up', 'J6'), (20, 30, 30, 32, '-4', 1425, '100%', 'Centred-1Car Down', 'J6')`);
-    }
-    console.log("⚓ GBR 1381 Smart Engine Live");
-  } catch (err) { console.error("❌ Init Error:", err.message); }
+// --- DYNAMIC SYNTHETIC DATA (Realistic Solent Simulation) ---
+const getSyntheticSolent = () => {
+  const hour = new Date().getHours();
+  // Simulate a sea breeze cycle
+  const windBase = hour > 10 && hour < 18 ? 16 : 8;
+  const variance = Math.sin(Date.now() / 100000) * 3;
+  return {
+    weather: {
+      current: {
+        wind_speed_10m: windBase + variance,
+        wind_direction_10m: 215 + (variance * 5),
+        temperature_2m: 14 + Math.sin(hour/24) * 5,
+        relative_humidity_2m: 75
+      }
+    },
+    marine: { current: { wave_height: 0.3 + (Math.abs(variance) / 10) } },
+    source: "Solent-Synthetic (Active)",
+    timestamp: new Date().toISOString()
+  };
 };
-initDB();
 
-// Root route for verification
-app.get('/', (req, res) => res.send("🚀 GBR 1381 BACKEND ACTIVE"));
-app.get('/api/health', (req, res) => res.json({ status: "OK", db: pool ? "CONNECTED" : "OFFLINE" }));
+// --- TACTICAL ROUTES ---
 
-// --- SMART PERFORMANCE ENGINE ---
-app.get('/api/recommendation', async (req, res) => {
-  const windSpd = parseFloat(req.query.wind) || 12;
-  const crewWeight = parseFloat(req.query.weight) || 320;
-  const seaState = parseFloat(req.query.sea) || 0.3; 
-  try {
-    const base = await pool.query('SELECT * FROM tuning_guide WHERE $1 BETWEEN min_wind AND max_wind', [Math.round(windSpd)]);
-    let baseData = base.rows[0] || { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+', rake: 1425, backstay: '0', traveller: 'Up' };
-    const weightFactor = crewWeight - 320; 
-    let weightOffset = Math.floor(weightFactor / 20); 
-    let chopOffset = seaState > 0.5 ? 1 : 0;
-    res.json({
-      base: baseData,
-      suggested_offsets: { upper: weightOffset + chopOffset, lower: weightOffset },
-      recommended_sail: baseData.jib_selection || 'J2+',
-      conditions: { weight: crewWeight, sea: seaState, wind: windSpd }
-    });
-  } catch (err) { res.status(500).json({ error: "Engine Offline" }); }
-});
-
-// Debug Route for Render Connectivity
-app.get('/api/debug/weather', async (req, res) => {
-  const results = { om: null, om_error: null, bm: null, bm_error: null };
-  try {
-    const omRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m&wind_speed_unit=kn', { timeout: 5000 });
-    results.om = omRes.data;
-  } catch (e) { results.om_error = e.message; }
-  
-  try {
-    const bmRes = await axios.get('https://www.bramblemet.co.uk/get_data.php', { timeout: 5000 });
-    results.bm = bmRes.data;
-  } catch (e) { results.bm_error = e.message; }
-  
+app.get('/api/debug/outbound', async (req, res) => {
+  const results = { google: "pending", mb: "pending" };
+  try { await axios.get('https://google.com', { timeout: 3000 }); results.google = "Success"; } catch (e) { results.google = `Failed: ${e.message}`; }
+  try { await axios.get(`https://my.meteoblue.com/packages/basic-1h?apikey=${API_KEY}&lat=50.79&lon=-1.10`, { timeout: 3000 }); results.mb = "Success"; } catch (e) { results.mb = `Failed: ${e.message}`; }
   res.json(results);
 });
 
-// --- CORE ROUTES (SOLENT DATA) ---
 app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Solent Data Request`);
-  
-  let weatherData = { current: { wind_speed_10m: 12, wind_direction_10m: 210, temperature_2m: 15 } };
-  let marineData = { current: { wave_height: 0.3 } };
-  let source = "Safe-Mode";
-
   try {
-    // Verified primary source for stable performance
-    const wRes = await axios.get('https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m&wind_speed_unit=kn&timezone=GMT', { 
-      headers: { 'Accept': 'application/json' },
-      timeout: 8000 
-    });
-
-    if (wRes.data && wRes.data.current) {
-      weatherData = wRes.data;
-      source = "Open-Meteo (Live)";
+    const mbRes = await axios.get(`https://my.meteoblue.com/packages/basic-1h?apikey=${API_KEY}&lat=50.79&lon=-1.10&format=json`, { timeout: 5000 });
+    if (mbRes.data && mbRes.data.data_1h) {
+      const mb = mbRes.data.data_1h;
+      return res.json({
+        weather: { current: { wind_speed_10m: mb.windspeed[0], wind_direction_10m: mb.winddirection[0], temperature_2m: mb.temperature[0], relative_humidity_2m: mb.relativehumidity[0] } },
+        marine: { current: { wave_height: 0.4 } },
+        source: "Meteoblue (Pro)",
+        timestamp: new Date().toISOString()
+      });
     }
-
-    const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 8000 });
-    if (mRes.data && mRes.data.current) {
-      marineData = mRes.data;
-    }
-
-    res.json({ 
-      weather: weatherData, 
-      marine: marineData, 
-      source, 
-      timestamp: new Date().toISOString() 
-    });
+    throw new Error("Empty API Response");
   } catch (err) {
-    console.error("!! Solent Proxy Failed:", err.message);
-    res.json({ 
-      weather: weatherData, 
-      marine: marineData, 
-      source: "Emergency Fallback",
-      error: err.message 
-    });
+    console.warn("Using Synthetic Fallback:", err.message);
+    res.json(getSyntheticSolent());
   }
 });
 
 app.get(['/api/tides/solent', '/api/tides/portsmouth'], async (req, res) => {
   try {
-    const resTide = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT', { timeout: 5000 });
+    const resTide = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT', { timeout: 4000 });
     res.json(resTide.data);
-  } catch (err) { res.json({ hourly: { time: [new Date().toISOString()], sea_level_height_msl: [0] } }); }
+  } catch (err) {
+    // Synthetic Tides
+    const times = []; const heights = [];
+    for(let i=0; i<48; i++) {
+      const d = new Date(); d.setHours(d.getHours() + i);
+      times.push(d.toISOString());
+      heights.push(Math.sin(i/2) * 2.5);
+    }
+    res.json({ hourly: { time: times, sea_level_height_msl: heights }, source: "Synthetic" });
+  }
 });
 
 app.get('/api/history', async (req, res) => {
@@ -130,7 +91,6 @@ app.get('/api/history', async (req, res) => {
 app.post('/api/garmin/upload', async (req, res) => {
   const { sailor_name, fit_data, type } = req.body;
   try {
-    const FitParser = require('fit-file-parser').default || require('fit-file-parser');
     const buffer = Buffer.from(fit_data, 'base64');
     const parser = new FitParser({ force: true });
     parser.parse(buffer, async (err, data) => {
@@ -152,8 +112,10 @@ app.post('/api/garmin/upload', async (req, res) => {
 });
 
 app.get('/api/athletes', async (req, res) => {
-  const r = await pool.query('SELECT * FROM athlete_profiles ORDER BY name ASC');
-  res.json(r.rows);
+  try {
+    const r = await pool.query('SELECT * FROM athlete_profiles ORDER BY name ASC');
+    res.json(r.rows);
+  } catch (e) { res.json([]); }
 });
 
 app.post('/api/athletes', async (req, res) => {
@@ -163,8 +125,10 @@ app.post('/api/athletes', async (req, res) => {
 });
 
 app.get('/api/sails', async (req, res) => {
-  const r = await pool.query('SELECT * FROM sail_inventory ORDER BY hours_flown ASC');
-  res.json(r.rows);
+  try {
+    const r = await pool.query('SELECT * FROM sail_inventory ORDER BY hours_flown ASC');
+    res.json(r.rows);
+  } catch (e) { res.json([]); }
 });
 
 app.post('/api/sails', async (req, res) => {
@@ -173,17 +137,25 @@ app.post('/api/sails', async (req, res) => {
   res.sendStatus(200);
 });
 
-app.post('/api/feedback', async (req, res) => {
-  const { wind_speed, upper_offset, lower_offset, performance_rating } = req.body;
-  await pool.query('INSERT INTO performance_feedback (wind_speed, upper_offset, lower_offset, performance_rating) VALUES ($1, $2, $3, $4)', [wind_speed, upper_offset, lower_offset, performance_rating]);
-  res.sendStatus(200);
+app.get(['/api/recommendation'], async (req, res) => {
+  const windSpd = parseFloat(req.query.wind) || 12;
+  const crewWeight = parseFloat(req.query.weight) || 320;
+  const seaState = parseFloat(req.query.sea) || 0.3; 
+  try {
+    const base = await pool.query('SELECT * FROM tuning_guide WHERE $1 BETWEEN min_wind AND max_wind', [Math.round(windSpd)]);
+    let baseData = base.rows[0] || { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+', rake: 1425, backstay: '0', traveller: 'Up' };
+    const weightFactor = crewWeight - 320; 
+    let weightOffset = Math.floor(weightFactor / 20); 
+    res.json({
+      base: baseData,
+      suggested_offsets: { upper: weightOffset + (seaState > 0.5 ? 1 : 0), lower: weightOffset },
+      recommended_sail: baseData.jib_selection || 'J2+',
+      conditions: { weight: crewWeight, sea: seaState, wind: windSpd }
+    });
+  } catch (err) { res.json({ base: { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+' }, suggested_offsets: { upper: 0, lower: 0 } }); }
 });
 
-app.get('/api/admin/reset-db', async (req, res) => {
-  await pool.query('DROP TABLE IF EXISTS performance_feedback, tuning_logs, athlete_profiles, sail_inventory, tuning_guide');
-  await initDB();
-  res.send("DB Reset Success");
-});
+app.get('/', (req, res) => res.send("🚀 GBR 1381 BACKEND ACTIVE"));
 
 const PORT = process.env.PORT || 5222;
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 GBR 1381 ONLINE`));

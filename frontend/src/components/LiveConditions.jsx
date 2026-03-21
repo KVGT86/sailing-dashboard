@@ -23,20 +23,20 @@ export default function LiveConditions() {
         const current = weatherObj.current || data.current || {};
         
         // Absolute safety for wind speed
-        const getVal = (val, fallback) => (val !== undefined && val !== null) ? Number(val) : fallback;
+        const getVal = (val, fallback) => (val !== undefined && val !== null && !isNaN(Number(val))) ? Number(val) : fallback;
 
-        const wSpd = getVal(current.wind_speed_10m ?? current.wind_speed, 12);
-        const wDir = getVal(current.wind_direction_10m ?? current.wind_direction, 210);
-        const wGust = getVal(current.wind_gusts_10m, wSpd * 1.2);
-        const temp = getVal(current.temperature_2m, 15);
-        const humidity = getVal(current.relative_humidity_2m, 70);
+        const currentWind = getVal(current.wind_speed_10m ?? current.wind_speed, 12);
+        const currentDir = getVal(current.wind_direction_10m ?? current.wind_direction, 210);
+        const currentGust = getVal(current.wind_gusts_10m, currentWind * 1.2);
+        const currentTemp = getVal(current.temperature_2m, 15);
+        const currentHum = getVal(current.relative_humidity_2m, 70);
 
         setWeather({
-          windSpeed: wSpd.toFixed(1),
-          windGust: wGust.toFixed(1),
-          windDirection: Math.round(wDir),
-          temp: Math.round(temp),
-          humidity: Math.round(humidity),
+          windSpeed: currentWind.toFixed(1),
+          windGust: currentGust.toFixed(1),
+          windDirection: Math.round(currentDir),
+          temp: Math.round(currentTemp),
+          humidity: Math.round(currentHum),
           source: data.source || "System Default"
         });
 
