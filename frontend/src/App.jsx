@@ -3,7 +3,9 @@ import axios from 'axios';
 import AthleteDashboard from './components/AthleteDashboard';
 import LiveConditions from './components/LiveConditions';
 import SetupGuide from './components/SetupGuide';
-import SailTracker from './components/SailTracker'; // New Component
+import SailTracker from './components/SailTracker';
+import SolentMap from './components/SolentMap';
+import Settings from './components/Settings';
 import { API_URL } from './config';
 
 export default function App() {
@@ -56,6 +58,7 @@ export default function App() {
   };
 
   const activeCrew = roster.filter(s => s.on_boat);
+  const totalWeight = activeCrew.reduce((sum, s) => sum + (s.weight_kg || 0), 0);
   const currentSailor = roster.find(s => s.id === selectedSailorId);
 
   if (loading) return <div className="min-h-screen bg-[#1D1B44] flex items-center justify-center text-white font-black italic uppercase animate-pulse">Syncing GBR 1381...</div>;
@@ -72,7 +75,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex gap-3 md:gap-5 text-[10px] font-black uppercase overflow-x-auto">
-          {['dashboard', 'guide', 'weather', 'sails', 'fleet'].map(tab => (
+          {['dashboard', 'map', 'guide', 'weather', 'sails', 'fleet', 'settings'].map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={activeTab === tab ? 'text-[#ED1C24]' : 'text-slate-400 hover:text-white'}>
               {tab}
             </button>
@@ -81,10 +84,10 @@ export default function App() {
       </nav>
 
       <main className="container mx-auto mt-6 px-4">
-        {/* GLOBAL CREW SELECTOR */}
-        {activeTab !== 'fleet' && (
-          <div className="bg-white p-4 rounded-xl shadow mb-6 flex flex-wrap items-center gap-3 border-l-4 border-[#ED1C24]">
-            <span className="text-[10px] font-black uppercase text-slate-400 mr-2">On Boat Today:</span>
+        {/* CREW TALLY BAR */}
+        <div className="bg-white p-4 rounded-xl shadow mb-6 flex flex-wrap items-center justify-between border-l-4 border-[#ED1C24]">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black uppercase text-slate-400 mr-2">Crew Today:</span>
             {roster.map(s => (
               <button
                 key={s.id}
@@ -97,7 +100,13 @@ export default function App() {
               </button>
             ))}
           </div>
-        )}
+          <div className="text-right">
+             <span className="text-[9px] font-black text-slate-400 uppercase">Live Weight Tally</span>
+             <p className={`text-xl font-black italic ${totalWeight > 350 ? 'text-red-600' : 'text-[#1D1B44]'}`}>
+                {totalWeight.toFixed(0)} <span className="text-xs uppercase not-italic">KG</span>
+             </p>
+          </div>
+        </div>
 
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
           {activeTab === 'dashboard' && (
@@ -112,9 +121,11 @@ export default function App() {
             </>
           )}
 
+          {activeTab === 'map' && <SolentMap />}
           {activeTab === 'guide' && <SetupGuide activeCrew={activeCrew} />}
           {activeTab === 'weather' && <LiveConditions />}
           {activeTab === 'sails' && <SailTracker sails={sails} refresh={fetchData} />}
+          {activeTab === 'settings' && <Settings roster={roster} />}
 
           {activeTab === 'fleet' && (
              <div className="bg-white p-6 rounded-xl shadow border-t-4 border-[#1D1B44]">

@@ -24,7 +24,10 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
         height_cm: sailor.height_cm || sailor.heightCm || '', 
         rhr: sailor.rhr || '', 
         max_hr: sailor.max_hr || sailor.maxHr || '', 
-        vo2max: sailor.vo2max || '' 
+        vo2max: sailor.vo2max || '',
+        readiness_score: sailor.readiness_score || 80,
+        body_battery: sailor.body_battery || 100,
+        recovery_hours: sailor.recovery_hours || 0
       });
       setIsEditing(false);
       fetchHistory();
@@ -37,7 +40,7 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
       const response = await axios.get(`${API_URL}/history`);
       // Filter for this specific sailor's logs using name or ID
       const sailorHistory = response.data
-        .filter(log => log.sailor_id === sailor.id || log.sailorName === sailor.name)
+        .filter(log => log.sailor_id === sailor.id || log.sailor_name === sailor.name)
         .map(log => ({ 
           ...log, 
           date: new Date(log.date || log.timestamp).toLocaleDateString() 
@@ -59,13 +62,17 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
         height_cm: Number(profileForm.height_cm),
         rhr: Number(profileForm.rhr),
         max_hr: Number(profileForm.max_hr),
-        vo2max: Number(profileForm.vo2max)
+        vo2max: Number(profileForm.vo2max),
+        readiness_score: Number(profileForm.readiness_score),
+        body_battery: Number(profileForm.body_battery),
+        recovery_hours: Number(profileForm.recovery_hours),
+        on_boat: sailor.on_boat
       };
 
       await axios.post(`${API_URL}/athletes`, payload);
       
       // Update parent state (App.jsx)
-      updateProfile(sailor.id, payload);
+      updateProfile();
       setIsEditing(false);
       alert("Profile synced to GBR 1381 Cloud");
     } catch (error) {
@@ -148,6 +155,14 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
                     <label className="text-[10px] font-black text-slate-400 uppercase">Max HR</label>
                     <input type="number" value={profileForm.max_hr} onChange={e => setProfileForm({...profileForm, max_hr: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" required />
                   </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase">Readiness (0-100)</label>
+                    <input type="number" value={profileForm.readiness_score} onChange={e => setProfileForm({...profileForm, readiness_score: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase">Recovery (hrs)</label>
+                    <input type="number" value={profileForm.recovery_hours} onChange={e => setProfileForm({...profileForm, recovery_hours: e.target.value})} className="w-full mt-1 font-bold border rounded p-1" />
+                  </div>
                   <div className="col-span-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase">VO2 Max</label>
                     <input type="number" step="0.1" value={profileForm.vo2max} onChange={e => setProfileForm({...profileForm, vo2max: e.target.value})} className="w-full mt-1 font-bold border-red-200 border rounded p-1" required />
@@ -158,14 +173,31 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
                </button>
             </form>
           ) : (
-            <div className="grid grid-cols-5 gap-2 text-center">
-              <StatDisplay label="Weight" val={`${profileForm.weight_kg || sailor.weight_kg || '--'}kg`} />
-              <StatDisplay label="Height" val={`${profileForm.height_cm || sailor.height_cm || '--'}cm`} />
-              <StatDisplay label="RHR" val={profileForm.rhr || sailor.rhr || '--'} />
-              <StatDisplay label="MAX HR" val={profileForm.max_hr || sailor.max_hr || '--'} />
-              <div className="bg-red-50 p-2 rounded border border-red-100">
-                <span className="block text-[8px] font-black text-red-600 uppercase">VO2 Max</span>
-                <span className="text-sm font-black text-red-700">{profileForm.vo2max || sailor.vo2max || '--'}</span>
+            <div className="space-y-4">
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <StatDisplay label="Weight" val={`${profileForm.weight_kg || sailor.weight_kg || '--'}kg`} />
+                <StatDisplay label="RHR" val={profileForm.rhr || sailor.rhr || '--'} />
+                <StatDisplay label="MAX HR" val={profileForm.max_hr || sailor.max_hr || '--'} />
+                <div className="bg-red-50 p-2 rounded border border-red-100">
+                  <span className="block text-[8px] font-black text-red-600 uppercase">VO2 Max</span>
+                  <span className="text-sm font-black text-red-700">{profileForm.vo2max || sailor.vo2max || '--'}</span>
+                </div>
+              </div>
+              
+              {/* GARMIN READINESS HUD */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-600 text-white p-3 rounded-lg shadow-inner">
+                   <p className="text-[8px] font-black uppercase opacity-70">Readiness</p>
+                   <p className="text-2xl font-black italic">{profileForm.readiness_score}/100</p>
+                </div>
+                <div className="bg-slate-800 text-white p-3 rounded-lg shadow-inner">
+                   <p className="text-[8px] font-black uppercase opacity-70">Body Battery</p>
+                   <p className="text-2xl font-black italic">{profileForm.body_battery}%</p>
+                </div>
+                <div className="bg-amber-500 text-white p-3 rounded-lg shadow-inner">
+                   <p className="text-[8px] font-black uppercase opacity-70">Recovery</p>
+                   <p className="text-2xl font-black italic">{profileForm.recovery_hours}h</p>
+                </div>
               </div>
             </div>
           )}

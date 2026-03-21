@@ -15,7 +15,7 @@ const pool = new Pool({
 
 const initDB = async () => {
   try {
-    // A. Athlete Profiles
+    // A. Athlete Profiles (Extended with Garmin Readiness)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS athlete_profiles (
         id SERIAL PRIMARY KEY,
@@ -25,7 +25,10 @@ const initDB = async () => {
         rhr INT,
         max_hr INT,
         vo2max FLOAT,
-        on_boat BOOLEAN DEFAULT FALSE
+        on_boat BOOLEAN DEFAULT FALSE,
+        readiness_score INT DEFAULT 80,
+        body_battery INT DEFAULT 100,
+        recovery_hours INT DEFAULT 0
       )
     `);
 
@@ -41,7 +44,7 @@ const initDB = async () => {
       )
     `);
 
-    // C. Tuning Logs (The AI's Learning Data)
+    // C. Tuning Logs (Grand Prix AI Learning Data)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tuning_logs (
         id SERIAL PRIMARY KEY,
@@ -57,11 +60,14 @@ const initDB = async () => {
         notes TEXT,
         rpe INT,
         stress_score INT,
-        avg_hr INT
+        avg_hr INT,
+        total_weight FLOAT,
+        sea_state FLOAT,
+        tide_flow TEXT
       )
     `);
 
-    // D. Performance Feedback (Direct Offsets)
+    // D. Performance Feedback
     await pool.query(`
       CREATE TABLE IF NOT EXISTS performance_feedback (
         id SERIAL PRIMARY KEY,
@@ -69,11 +75,13 @@ const initDB = async () => {
         upper_offset INT DEFAULT 0,
         lower_offset INT DEFAULT 0,
         performance_rating INT,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        sea_state FLOAT DEFAULT 0,
+        crew_weight FLOAT DEFAULT 0
       )
     `);
 
-    // E. Tuning Guide (North Sails GBR 1381 Crossovers)
+    // E. Tuning Guide (Extended for AWS J/70 Data)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS tuning_guide (
         min_wind INT PRIMARY KEY,
@@ -81,83 +89,148 @@ const initDB = async () => {
         upper_shroud INT,
         lower_shroud INT,
         headstay TEXT,
-        jib_selection TEXT
+        jib_selection TEXT,
+        rake INT,
+        backstay TEXT,
+        traveller TEXT
       )
     `);
 
+    // Ensure columns exist
+    await pool.query("ALTER TABLE tuning_guide ADD COLUMN IF NOT EXISTS rake INT");
+    await pool.query("ALTER TABLE tuning_guide ADD COLUMN IF NOT EXISTS backstay TEXT");
+    await pool.query("ALTER TABLE tuning_guide ADD COLUMN IF NOT EXISTS traveller TEXT");
+
     const guideCheck = await pool.query('SELECT * FROM tuning_guide LIMIT 1');
-    if (guideCheck.rowCount === 0) {
+    if (guideCheck.rowCount <= 3) { // If only basic data or empty
+      await pool.query('DELETE FROM tuning_guide');
       await pool.query(`
-        INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, jib_selection)
+        INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, rake, backstay, traveller, jib_selection)
         VALUES 
-          (0, 9, 14, 8, '+1 hole', 'J2+'),  -- Light: Power entry needed
-          (10, 17, 20, 15, 'Base', 'J2+'),  -- Base: Primary weapon
-          (18, 30, 24, 19, '-1 hole', 'J6') -- Heavy: Flat exit for speed
+          (1, 5, 15, 0, '+2', 1425, '0', '100% Up', 'J2+'),
+          (6, 7, 17, 0, '+1', 1425, '0-20%', '100% Up', 'J2+'),
+          (8, 10, 19, 9, 'BASE', 1425, '0-40%', '50-100%', 'J2+'),
+          (11, 12, 21, 13, 'BASE', 1425, '30-50%', '40-75%', 'J2+'),
+          (13, 13, 23, 16, '-1', 1425, '40-60%', '20-40%', 'J2+'),
+          (14, 14, 24, 21, '-1', 1425, '50-70%', '10-30%', 'J6'),
+          (15, 15, 26, 23, '-2', 1425, '60-80%', '1Car Up', 'J6'),
+          (16, 16, 27, 27, '-2', 1425, '80-100%', '1Car Up', 'J6'),
+          (17, 18, 28, 28, '-3', 1425, '100%', '1Car Up', 'J6'),
+          (19, 19, 29, 30, '-3', 1425, '100%', '1Car Up', 'J6'),
+          (20, 30, 30, 32, '-4', 1425, '100%', 'Centred-1Car Down', 'J6')
       `);
     }
-    console.log("⚓ GBR 1381 AI Engine Live & Learning");
+    console.log("⚓ GBR 1381 AI Engine Live & Seeded with AWS J/70 Data");
   } catch (err) { console.error("❌ Init Error:", err); }
 };
 initDB();
 
-// --- AI RECOMMENDATION ENGINE ---
+// --- AI RECOMMENDATION ENGINE (Weight & Sea State Sensitive) ---
 app.get('/api/recommendation', async (req, res) => {
   const windSpd = parseFloat(req.query.wind) || 12;
+  const crewWeight = parseFloat(req.query.weight) || 320;
+  const seaState = parseFloat(req.query.sea) || 0; // Wave height in metres
+
   try {
-    // 1. Get North Sails Base Guide
+    // 1. Get Base Guide
     const base = await pool.query(
       'SELECT * FROM tuning_guide WHERE $1 BETWEEN min_wind AND max_wind', 
       [Math.round(windSpd)]
     );
-    const targetCode = base.rows[0]?.jib_selection || 'J2+';
+    let baseData = base.rows[0] || { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+' };
 
-    // 2. Look for Learned Preference (Did J6 work better in J2+ wind?)
+    // 2. Weight Correction (If light, depower earlier. If heavy, hold power.)
+    const weightFactor = crewWeight - 320; // Assume 320kg is base for J/70
+    let weightOffset = Math.floor(weightFactor / 20); // 1 pt every 20kg deviation
+
+    // 3. Sea State Correction (Add power in chop)
+    let chopOffset = seaState > 0.5 ? 1 : 0;
+
+    // 4. Learned Preferences
     const learned = await pool.query(
-      'SELECT jib_used FROM tuning_logs WHERE wind_condition BETWEEN $1 AND $2 AND performance_rating >= 4 GROUP BY jib_used ORDER BY COUNT(*) DESC LIMIT 1',
-      [windSpd - 2, windSpd + 2]
+      'SELECT upper_offset, lower_offset FROM performance_feedback WHERE wind_speed BETWEEN $1 AND $2 AND sea_state BETWEEN $3 AND $4 AND performance_rating >= 4 ORDER BY timestamp DESC LIMIT 5',
+      [windSpd - 2, windSpd + 2, seaState - 0.2, seaState + 0.2]
     );
 
-    const finalTarget = learned.rows[0]?.jib_used || targetCode;
-
-    // 3. Find specific sail in wardrobe with lowest hours
-    const sail = await pool.query(
-      "SELECT id, name FROM sail_inventory WHERE (id ILIKE $1 OR name ILIKE $1) AND is_race_sail = TRUE ORDER BY hours_flown ASC LIMIT 1",
-      [`%${finalTarget}%`]
-    );
-
-    // 4. Get AI Tension Offsets
-    const adj = await pool.query(
-      'SELECT AVG(upper_offset) as u, AVG(lower_offset) as l FROM performance_feedback WHERE wind_speed BETWEEN $1 AND $2 AND performance_rating >= 4',
-      [windSpd - 3, windSpd + 3]
-    );
+    let avgU = 0, avgL = 0;
+    if (learned.rows.length > 0) {
+      avgU = learned.rows.reduce((sum, r) => sum + r.upper_offset, 0) / learned.rows.length;
+      avgL = learned.rows.reduce((sum, r) => sum + r.lower_offset, 0) / learned.rows.length;
+    }
 
     res.json({
-      base: base.rows[0],
-      suggested_offsets: { upper: Math.round(adj.rows[0].u || 0), lower: Math.round(adj.rows[0].l || 0) },
-      recommended_sail: sail.rows[0] ? `${sail.rows[0].name} (${sail.rows[0].id})` : `CHECK WARDROBE FOR ${finalTarget}`,
-      isLearned: learned.rows.length > 0
+      base: baseData,
+      suggested_offsets: { 
+        upper: Math.round(avgU + weightOffset + chopOffset), 
+        lower: Math.round(avgL + weightOffset) 
+      },
+      recommended_sail: baseData.jib_selection,
+      conditions: { weight: crewWeight, sea: seaState }
     });
   } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- CORE ROUTES (Weather, Athletes, Sails, Feedback) ---
-app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
+// --- CORE ROUTES ---
+
+// Free Weather & Marine Proxy
+app.get('/api/solent', async (req, res) => {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
-    const response = await axios.get(url);
+    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
+    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT`;
+    
+    const [weather, marine] = await Promise.all([
+      axios.get(weatherUrl),
+      axios.get(marineUrl)
+    ]);
+
+    res.json({
+      weather: weather.data,
+      marine: marine.data
+    });
+  } catch (err) { res.status(500).send("Proxy Failed"); }
+});
+
+// Solent Tides API (Free via Open-Meteo Marine)
+app.get('/api/tides/solent', async (req, res) => {
+  try {
+    const response = await axios.get(`https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT`);
     res.json(response.data);
-  } catch (err) { res.status(500).send("Weather Proxy Failed"); }
+  } catch (err) { res.status(500).send("Tide Sync Failed"); }
+});
+
+app.get('/api/history', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM tuning_logs ORDER BY date DESC LIMIT 20');
+    res.json(r.rows);
+  } catch (err) { res.status(500).send(err.message); }
 });
 
 app.post('/api/athletes', async (req, res) => {
-  const { name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat } = req.body;
+  const { name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat, readiness_score, body_battery, recovery_hours } = req.body;
   try {
     await pool.query(`
-      INSERT INTO athlete_profiles (name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (name) DO UPDATE SET weight_kg = $2, on_boat = $7
-    `, [name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat]);
+      INSERT INTO athlete_profiles (name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat, readiness_score, body_battery, recovery_hours)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (name) DO UPDATE SET 
+        weight_kg = $2, on_boat = $7, readiness_score = $8, body_battery = $9, recovery_hours = $10
+    `, [name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat, readiness_score || 80, body_battery || 100, recovery_hours || 0]);
     res.sendStatus(200);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+app.post('/api/garmin/upload', async (req, res) => {
+  // Simple JSON intake for Garmin export
+  const { sailor_name, activities } = req.body;
+  try {
+    // Process last activity for readiness update
+    if (activities && activities.length > 0) {
+      const last = activities[0];
+      await pool.query(
+        'UPDATE athlete_profiles SET readiness_score = $1, body_battery = $2, recovery_hours = $3 WHERE name = $4',
+        [last.readiness, last.battery, last.recovery, sailor_name]
+      );
+    }
+    res.json({ status: "Garmin Sync Complete" });
   } catch (err) { res.status(500).send(err.message); }
 });
 

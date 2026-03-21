@@ -12,17 +12,18 @@ export default function SetupGuide({ activeCrew }) {
   useEffect(() => {
     const fetchSmartSetup = async () => {
       try {
-        const weather = await axios.get(`${API_URL}/solent`);
-        const liveWind = weather.data.current.wind_speed_10m;
+        const env = await axios.get(`${API_URL}/solent`);
+        const liveWind = env.data.weather.current.wind_speed_10m;
+        const liveSea = env.data.marine.current.wave_height;
         setWind(liveWind);
 
-        const rec = await axios.get(`${API_URL}/recommendation?wind=${liveWind}`);
+        const rec = await axios.get(`${API_URL}/recommendation?wind=${liveWind}&weight=${totalWeight}&sea=${liveSea}`);
         setData(rec.data);
       } catch (err) { console.error("Sync Error", err); }
       finally { setLoading(false); }
     };
     fetchSmartSetup();
-  }, [activeCrew]);
+  }, [activeCrew, totalWeight]);
 
   const saveTuning = async () => {
     const u = document.getElementById('uOff').value;
@@ -31,7 +32,9 @@ export default function SetupGuide({ activeCrew }) {
       wind_speed: wind,
       upper_offset: parseInt(u) || 0,
       lower_offset: parseInt(l) || 0,
-      performance_rating: 5
+      performance_rating: 5,
+      crew_weight: totalWeight,
+      sea_state: data?.conditions?.sea || 0
     });
     alert("AI Learned GBR 1381 Bias.");
   };
@@ -48,15 +51,28 @@ export default function SetupGuide({ activeCrew }) {
              <p className="text-xl font-black text-[#ED1C24] italic uppercase">{data?.recommended_sail}</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4 mt-6">
+        <div className="grid grid-cols-3 gap-4 mt-6">
           <StatBox label="Crew Weight" val={`${totalWeight.toFixed(0)}kg`} />
           <StatBox label="Live Wind" val={`${wind.toFixed(1)} kts`} />
+          <StatBox label="Sea State" val={`${data?.conditions?.sea}m`} />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <TargetCard label="Uppers" val={(data?.base?.upper_shroud || 0) + (data?.suggested_offsets?.upper || 0)} sub="Turn to marked V1/D1" offset={data?.suggested_offsets?.upper} />
         <TargetCard label="Lowers" val={(data?.base?.lower_shroud || 0) + (data?.suggested_offsets?.lower || 0)} sub="Check for mid-mast sag" offset={data?.suggested_offsets?.lower} />
+        <TargetCard label="Backstay" val={data?.base?.backstay || '0'} sub="Power/Flatten Main" />
+        <TargetCard label="Traveller" val={data?.base?.traveller || 'Up'} sub="Adjust for leach tension" />
+      </div>
+
+      <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-slate-100 flex justify-between items-center">
+         <div>
+            <h3 className="text-sm font-black uppercase text-[#1D1B44]">Global Rig Calibration</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">J/70 Standard Rake</p>
+         </div>
+         <div className="text-right">
+            <span className="text-3xl font-black italic text-[#ED1C24]">{data?.base?.rake || 1425} <span className="text-xs">MM</span></span>
+         </div>
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-slate-100">
