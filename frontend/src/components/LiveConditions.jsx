@@ -18,31 +18,34 @@ export default function LiveConditions() {
           axios.get(`${API_URL}/tides/portsmouth`)
         ]);
 
-        const data = weatherRes.data;
-        const current = data.weather.current;
+        const data = weatherRes.data || {};
+        // Extreme defensive parsing to handle structural variations
+        const current = data.weather?.current || data.current || {};
+        
+        const wSpd = current.wind_speed_10m ?? 12;
+        const wDir = current.wind_direction_10m ?? 210;
+        const wGust = current.wind_gusts_10m ?? (wSpd * 1.2);
 
         setWeather({
-          windSpeed: current.wind_speed_10m.toFixed(1),
-          windGust: current.wind_gusts_10m ? current.wind_gusts_10m.toFixed(1) : (current.wind_speed_10m * 1.2).toFixed(1),
-          windDirection: current.wind_direction_10m,
-          temp: current.temperature_2m ? Math.round(current.temperature_2m) : 15,
-          humidity: current.relative_humidity_2m || 70,
-          source: data.source
+          windSpeed: Number(wSpd).toFixed(1),
+          windGust: Number(wGust).toFixed(1),
+          windDirection: wDir,
+          temp: Math.round(current.temperature_2m ?? 15),
+          humidity: current.relative_humidity_2m ?? 70,
+          source: data.source || "System Default"
         });
 
-        // Parse Open-Meteo hourly tides for display (Simplified)
-        if (tideRes.data.hourly) {
+        // Tide Parsing with safety
+        if (tideRes.data?.hourly?.sea_level_height_msl) {
           const times = tideRes.data.hourly.time;
           const heights = tideRes.data.hourly.sea_level_height_msl;
-          const now = new Date();
           const list = [];
-          for (let i = 0; i < times.length; i += 6) { // Show every 6 hours
+          for (let i = 0; i < Math.min(times.length, 24); i += 6) {
             list.push({
-              type: i % 12 === 0 ? 'High' : 'Low', // Approximation
+              type: i % 12 === 0 ? 'High' : 'Low',
               time: new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              height: heights[i].toFixed(2)
+              height: Number(heights[i] || 0).toFixed(2)
             });
-            if (list.length >= 4) break;
           }
           setTides(list);
         } else {
