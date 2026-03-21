@@ -45,10 +45,10 @@ export default function SetupGuide({ activeCrew }) {
     <div className="space-y-6">
       <div className="bg-[#1D1B44] p-6 rounded-xl shadow-2xl border-b-8 border-[#ED1C24] text-white">
         <div className="flex justify-between">
-          <h2 className="text-2xl font-black italic uppercase">AI Performance Mode</h2>
+          <h2 className="text-2xl font-black italic uppercase">Smart Performance Mode</h2>
           <div className="text-right">
-             <p className="text-[10px] font-bold text-slate-400 uppercase">Best Sail Choice</p>
-             <p className="text-xl font-black text-[#ED1C24] italic uppercase">{data?.recommended_sail}</p>
+             <p className="text-[10px] font-bold text-slate-400 uppercase">Recommended Sail</p>
+             <p className="text-xl font-black text-[#ED1C24] italic uppercase">{data?.recommended_sail || 'J2+'}</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 mt-6">

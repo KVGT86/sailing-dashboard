@@ -125,28 +125,23 @@ const initDB = async () => {
 };
 initDB();
 
-// --- AI RECOMMENDATION ENGINE (Weight & Sea State Sensitive) ---
+// --- Smart Performance Mode ENGINE (Weight & Sea State Sensitive) ---
 app.get('/api/recommendation', async (req, res) => {
   const windSpd = parseFloat(req.query.wind) || 12;
   const crewWeight = parseFloat(req.query.weight) || 320;
-  const seaState = parseFloat(req.query.sea) || 0; // Wave height in metres
+  const seaState = parseFloat(req.query.sea) || 0; 
 
   try {
-    // 1. Get Base Guide
     const base = await pool.query(
       'SELECT * FROM tuning_guide WHERE $1 BETWEEN min_wind AND max_wind', 
       [Math.round(windSpd)]
     );
-    let baseData = base.rows[0] || { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+' };
+    let baseData = base.rows[0] || { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+', rake: 1425, backstay: '0', traveller: 'Up' };
 
-    // 2. Weight Correction (If light, depower earlier. If heavy, hold power.)
-    const weightFactor = crewWeight - 320; // Assume 320kg is base for J/70
-    let weightOffset = Math.floor(weightFactor / 20); // 1 pt every 20kg deviation
-
-    // 3. Sea State Correction (Add power in chop)
+    const weightFactor = crewWeight - 320; 
+    let weightOffset = Math.floor(weightFactor / 20); 
     let chopOffset = seaState > 0.5 ? 1 : 0;
 
-    // 4. Learned Preferences
     const learned = await pool.query(
       'SELECT upper_offset, lower_offset FROM performance_feedback WHERE wind_speed BETWEEN $1 AND $2 AND sea_state BETWEEN $3 AND $4 AND performance_rating >= 4 ORDER BY timestamp DESC LIMIT 5',
       [windSpd - 2, windSpd + 2, seaState - 0.2, seaState + 0.2]
@@ -164,38 +159,53 @@ app.get('/api/recommendation', async (req, res) => {
         upper: Math.round(avgU + weightOffset + chopOffset), 
         lower: Math.round(avgL + weightOffset) 
       },
-      recommended_sail: baseData.jib_selection,
+      recommended_sail: baseData.jib_selection || 'J2+',
       conditions: { weight: crewWeight, sea: seaState }
     });
-  } catch (err) { res.status(500).send(err.message); }
+  } catch (err) { 
+    console.error("Rec Error:", err);
+    res.status(500).json({ error: "Recommendation Engine Offline" });
+  }
 });
 
 // --- CORE ROUTES ---
 
-// Free Weather & Marine Proxy
+// Free Weather & Marine Proxy (With Robust Error Handling)
 app.get('/api/solent', async (req, res) => {
   try {
     const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT`;
     
-    const [weather, marine] = await Promise.all([
-      axios.get(weatherUrl),
-      axios.get(marineUrl)
-    ]);
+    let weatherData = { current: { wind_speed_10m: 12, wind_direction_10m: 210 } };
+    let marineData = { current: { wave_height: 0.3 } };
+
+    try {
+      const wRes = await axios.get(weatherUrl, { timeout: 3000 });
+      weatherData = wRes.data;
+    } catch (e) { console.warn("Weather API Timeout - Using Default"); }
+
+    try {
+      const mRes = await axios.get(marineUrl, { timeout: 3000 });
+      marineData = mRes.data;
+    } catch (e) { console.warn("Marine API Timeout - Using Default"); }
 
     res.json({
-      weather: weather.data,
-      marine: marine.data
+      weather: weatherData,
+      marine: marineData
     });
-  } catch (err) { res.status(500).send("Proxy Failed"); }
+  } catch (err) { 
+    res.json({ weather: { current: { wind_speed_10m: 12 } }, marine: { current: { wave_height: 0.3 } } });
+  }
 });
 
-// Solent Tides API (Free via Open-Meteo Marine)
 app.get('/api/tides/solent', async (req, res) => {
   try {
-    const response = await axios.get(`https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT`);
+    const response = await axios.get(`https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT`, { timeout: 3000 });
     res.json(response.data);
-  } catch (err) { res.status(500).send("Tide Sync Failed"); }
+  } catch (err) { 
+    console.error("Tide Sync Failed");
+    res.json({ hourly: { time: [new Date().toISOString()], sea_level_height_msl: [0] } });
+  }
 });
 
 app.get('/api/history', async (req, res) => {

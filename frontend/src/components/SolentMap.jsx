@@ -48,15 +48,17 @@ export default function SolentMap() {
 
   // Current Tidal Flow Logic (Simple Solent Vector Approximation)
   const getTidalVector = () => {
-    if (!tides) return null;
+    if (!tides || !tides.hourly || !tides.hourly.sea_level_height_msl) return { dir: "Connecting...", color: "gray", lat: 0, lng: 0 };
+    
     const now = new Date();
     const currentHour = now.getHours();
     
     // Find HW (Max height in 24h window)
     const heights = tides.hourly.sea_level_height_msl;
     const maxIdx = heights.indexOf(Math.max(...heights.slice(0, 24)));
-    const hwHour = new Date(tides.hourly.time[maxIdx]).getHours();
+    if (maxIdx === -1) return { dir: "Slack", color: "gray", lat: 0, lng: 0 };
     
+    const hwHour = new Date(tides.hourly.time[maxIdx]).getHours();
     const diff = currentHour - hwHour;
     
     // Flood: HW -6 to HW (East), Ebb: HW to HW +6 (West)
@@ -79,12 +81,12 @@ export default function SolentMap() {
          <div className="flex gap-4 text-right">
             <div>
                <p className="text-[8px] font-black text-slate-400 uppercase">Tidal Flow</p>
-               <span className={`text-sm font-black italic uppercase ${flow?.color === 'green' ? 'text-green-600' : 'text-blue-600'}`}>{flow?.dir}</span>
+               <span className={`text-sm font-black italic uppercase ${flow?.color === 'green' ? 'text-green-600' : 'text-blue-600'}`}>{flow?.dir || 'Slack'}</span>
             </div>
             <div>
                <p className="text-[8px] font-black text-slate-400 uppercase">Live Wind</p>
-               <span className="text-xl font-black italic text-blue-600">{data?.weather?.current?.wind_speed_10m} KTS</span>
-               <p className="text-[8px] font-bold text-slate-400 uppercase">@{data?.weather?.current?.wind_direction_10m}°</p>
+               <span className="text-xl font-black italic text-blue-600">{data?.weather?.current?.wind_speed_10m || 12} KTS</span>
+               <p className="text-[8px] font-bold text-slate-400 uppercase">@{data?.weather?.current?.wind_direction_10m || 210}°</p>
             </div>
          </div>
       </div>
@@ -99,13 +101,13 @@ export default function SolentMap() {
           <CircleMarker center={position} radius={20} pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.2 }}>
             <Popup>
                <div className="font-black italic uppercase">GBR 1381 POSITION</div>
-               <p className="text-xs">Chop: {data?.marine?.current?.wave_height}m</p>
+               <p className="text-xs">Chop: {data?.marine?.current?.wave_height || 0.3}m</p>
             </Popup>
           </CircleMarker>
 
           {/* Tidal Flow Vectors at Strategic Points */}
           {[ [50.78, -1.25], [50.74, -1.15], [50.80, -1.05] ].map((pos, i) => (
-             flow?.lat !== 0 && (
+             flow && flow.lat !== 0 && (
                <Polyline 
                  key={i}
                  positions={[ pos, [pos[0] + flow.lat, pos[1] + flow.lng] ]}
@@ -128,7 +130,7 @@ export default function SolentMap() {
         <div className="absolute top-4 right-4 z-[1000] bg-white/90 p-4 rounded-lg shadow backdrop-blur-md border-l-4 border-red-500 w-48">
             <h3 className="text-[10px] font-black uppercase text-slate-400 mb-2">Tactical Summary</h3>
             <div className="space-y-2">
-                <HUDItem label="Sea State" val={`${data?.marine?.current?.wave_height}m`} />
+                <HUDItem label="Sea State" val={`${data?.marine?.current?.wave_height || 0.3}m`} />
                 <HUDItem label="Cloud Cover" val="Clear" />
                 <HUDItem label="Winning Side" val={data?.weather?.current?.wind_direction_10m > 200 ? "ISLAND" : "MAINLAND"} color="text-green-600" />
             </div>
