@@ -102,7 +102,7 @@ const initDB = async () => {
     await pool.query("ALTER TABLE tuning_guide ADD COLUMN IF NOT EXISTS traveller TEXT");
 
     const guideCheck = await pool.query('SELECT * FROM tuning_guide LIMIT 1');
-    if (guideCheck.rowCount <= 3) { // If only basic data or empty
+    if (guideCheck.rowCount <= 3) {
       await pool.query('DELETE FROM tuning_guide');
       await pool.query(`
         INSERT INTO tuning_guide (min_wind, max_wind, upper_shroud, lower_shroud, headstay, rake, backstay, traveller, jib_selection)
@@ -120,7 +120,7 @@ const initDB = async () => {
           (20, 30, 30, 32, '-4', 1425, '100%', 'Centred-1Car Down', 'J6')
       `);
     }
-    console.log("⚓ GBR 1381 AI Engine Live & Seeded with AWS J/70 Data");
+    console.log("⚓ GBR 1381 Smart Engine Live & Seeded");
   } catch (err) { console.error("❌ Init Error:", err); }
 };
 initDB();
@@ -129,28 +129,16 @@ const FitParser = require('fit-file-parser').default;
 
 // --- Smart Performance Mode ENGINE ---
 app.get('/api/recommendation', async (req, res) => {
-  // Explicitly handle missing wind with a J/70 'Base' default (12kts)
   const windSpd = parseFloat(req.query.wind) || 12;
   const crewWeight = parseFloat(req.query.weight) || 320;
   const seaState = parseFloat(req.query.sea) || 0.3; 
-
-  console.log(`[SmartMode] Calculating for: ${windSpd}kts, ${crewWeight}kg, ${seaState}m`);
 
   try {
     const base = await pool.query(
       'SELECT * FROM tuning_guide WHERE $1 BETWEEN min_wind AND max_wind', 
       [Math.round(windSpd)]
     );
-    
-    // Fallback if DB query fails or wind is out of range
-    let baseData = base.rows[0] || { 
-      upper_shroud: 20, 
-      lower_shroud: 15, 
-      jib_selection: 'J2+', 
-      rake: 1425, 
-      backstay: '0', 
-      traveller: 'Up' 
-    };
+    let baseData = base.rows[0] || { upper_shroud: 20, lower_shroud: 15, jib_selection: 'J2+', rake: 1425, backstay: '0', traveller: 'Up' };
 
     const weightFactor = crewWeight - 320; 
     let weightOffset = Math.floor(weightFactor / 20); 
@@ -158,52 +146,34 @@ app.get('/api/recommendation', async (req, res) => {
 
     res.json({
       base: baseData,
-      suggested_offsets: { 
-        upper: weightOffset + chopOffset, 
-        lower: weightOffset 
-      },
+      suggested_offsets: { upper: weightOffset + chopOffset, lower: weightOffset },
       recommended_sail: baseData.jib_selection || 'J2+',
       conditions: { weight: crewWeight, sea: seaState, wind: windSpd }
     });
-  } catch (err) { 
-    console.error("Rec Error:", err.message);
-    res.status(500).json({ error: "Recommendation Engine Offline" });
-  }
+  } catch (err) { res.status(500).json({ error: "Logic Engine Offline" }); }
 });
 
-// Hardened Solent Data Proxy (Bramblemet + Open-Meteo Fallback)
-app.get('/api/solent', async (req, res) => {
-  console.log("[Weather] Fetching Live Solent Conditions...");
-  
-  let currentWind = 12;
-  let currentDir = 210;
-  let currentSea = 0.3;
-  let source = "Fallback (Open-Meteo)";
+// --- CORE ROUTES ---
 
+// Solent Data (Bramblemet + Open-Meteo)
+app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
+  let currentWind = 12, currentDir = 210, currentSea = 0.3, source = "Fallback";
   try {
-    // 1. Primary: Try Bramblemet (Observed)
-    const brambleRes = await axios.get('https://www.bramblemet.co.uk/get_data.php', { timeout: 4000 }).catch(e => null);
-    
+    const brambleRes = await axios.get('https://www.bramblemet.co.uk/get_data.php', { timeout: 3000 }).catch(() => null);
     if (brambleRes && brambleRes.data && brambleRes.data.wind_speed) {
       currentWind = parseFloat(brambleRes.data.wind_speed);
       currentDir = parseInt(brambleRes.data.wind_direction);
-      source = "Bramblemet (Live Buoy)";
+      source = "Bramblemet";
     } else {
-      // 2. Secondary: Open-Meteo Forecast
-      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`;
-      const wRes = await axios.get(weatherUrl, { timeout: 4000 }).catch(e => null);
-      if (wRes && wRes.data && wRes.data.current) {
+      const wRes = await axios.get(`https://api.open-meteo.com/v1/forecast?latitude=50.79&longitude=-1.10&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&timezone=GMT`, { timeout: 3000 }).catch(() => null);
+      if (wRes && wRes.data.current) {
         currentWind = wRes.data.current.wind_speed_10m;
         currentDir = wRes.data.current.wind_direction_10m;
+        source = "Open-Meteo";
       }
     }
-
-    // 3. Marine Data (Waves)
-    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT`;
-    const mRes = await axios.get(marineUrl, { timeout: 4000 }).catch(e => null);
-    if (mRes && mRes.data && mRes.data.current) {
-      currentSea = mRes.data.current.wave_height;
-    }
+    const mRes = await axios.get(`https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT`, { timeout: 3000 }).catch(() => null);
+    if (mRes && mRes.data.current) currentSea = mRes.data.current.wave_height;
 
     res.json({
       weather: { current: { wind_speed_10m: currentWind, wind_direction_10m: currentDir } },
@@ -211,71 +181,59 @@ app.get('/api/solent', async (req, res) => {
       source,
       timestamp: new Date().toISOString()
     });
-  } catch (err) {
-    console.error("Critical Weather Failure:", err.message);
-    res.json({
-      weather: { current: { wind_speed_10m: 12, wind_direction_10m: 210 } },
-      marine: { current: { wave_height: 0.3 } },
-      source: "Hard Fallback",
-      status: "ERROR"
-    });
-  }
+  } catch (err) { res.json({ weather: { current: { wind_speed_10m: 12, wind_direction_10m: 210 } }, marine: { current: { wave_height: 0.3 } }, source: "Hard Fallback" }); }
+});
+
+app.get(['/api/tides/solent', '/api/tides/portsmouth'], async (req, res) => {
+  try {
+    const response = await axios.get(`https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&hourly=sea_level_height_msl&timezone=GMT`, { timeout: 3000 });
+    res.json(response.data);
+  } catch (err) { res.json({ hourly: { time: [new Date().toISOString()], sea_level_height_msl: [0] } }); }
+});
+
+app.get('/api/history', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM tuning_logs ORDER BY date DESC LIMIT 20');
+    res.json(r.rows);
+  } catch (err) { res.status(500).send(err.message); }
 });
 
 app.post('/api/garmin/upload', async (req, res) => {
   const { sailor_name, fit_data, type } = req.body;
-  console.log(`[Garmin] Processing ${type} .FIT for ${sailor_name}`);
-
   try {
     const buffer = Buffer.from(fit_data, 'base64');
     const parser = new FitParser({ force: true });
-
     parser.parse(buffer, async (err, data) => {
-      if (err) {
-        console.error("FIT Parse Error:", err);
-        return res.status(400).json({ error: "Invalid .FIT file structure" });
-      }
-
-      // Extract metrics based on type
-      let readiness = 80;
-      let battery = 100;
-      let recovery = 0;
-      let notes = "Sync Complete";
-
+      if (err) return res.status(400).json({ error: "Invalid .FIT" });
+      let readiness = 85, battery = 100, recovery = 0, notes = "Sync'd";
       if (type === 'wellness') {
-        // Wellness files usually have 'monitoring' data
         const summary = data.monitoring?.[data.monitoring.length - 1] || {};
         readiness = summary.readiness_score_value || 85;
         battery = summary.body_battery_level || 100;
-        notes = "Wellness Sync: Readiness extracted.";
       } else {
-        // Activity files
         const session = data.sessions?.[0] || {};
         readiness = Math.max(50, 100 - (session.total_training_effect || 0) * 10);
         recovery = session.recovery_time || 24;
-        notes = `Activity: ${session.sport} - Effort ${session.total_training_effect || 'N/A'}`;
       }
-
-      // Update Database
-      await pool.query(
-        'UPDATE athlete_profiles SET readiness_score = $1, body_battery = $2, recovery_hours = $3 WHERE name = $4',
-        [readiness, battery, recovery, sailor_name]
-      );
-
-      res.json({
-        message: "Garmin Sync Successful",
-        summary: { readiness, battery, recovery, notes }
-      });
+      await pool.query('UPDATE athlete_profiles SET readiness_score = $1, body_battery = $2, recovery_hours = $3 WHERE name = $4', [readiness, battery, recovery, sailor_name]);
+      res.json({ message: "Success", summary: { readiness, battery, recovery, notes } });
     });
-  } catch (err) {
-    console.error("Garmin Controller Error:", err.message);
-    res.status(500).json({ error: "Failed to process Garmin data" });
-  }
+  } catch (err) { res.status(500).json({ error: "Parse Error" }); }
 });
 
 app.get('/api/athletes', async (req, res) => {
   const r = await pool.query('SELECT * FROM athlete_profiles ORDER BY name ASC');
   res.json(r.rows);
+});
+
+app.post('/api/athletes', async (req, res) => {
+  const { name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat, readiness_score, body_battery, recovery_hours } = req.body;
+  await pool.query(`
+    INSERT INTO athlete_profiles (name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat, readiness_score, body_battery, recovery_hours)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (name) DO UPDATE SET weight_kg = $2, on_boat = $7, readiness_score = $8, body_battery = $9, recovery_hours = $10
+  `, [name, weight_kg, height_cm, rhr, max_hr, vo2max, on_boat, readiness_score || 80, body_battery || 100, recovery_hours || 0]);
+  res.sendStatus(200);
 });
 
 app.get('/api/sails', async (req, res) => {
@@ -302,4 +260,4 @@ app.get('/api/admin/reset-db', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5222;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 GBR 1381 AI ENGINE ACTIVE`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 GBR 1381 ENGINE ACTIVE`));
