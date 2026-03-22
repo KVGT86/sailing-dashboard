@@ -46,24 +46,67 @@ const CACHE_DURATION = 30 * 60 * 1000;
 app.get('/', (req, res) => res.send("🚀 GBR 1381 BACKEND ACTIVE (V3)"));
 app.get('/api/health', (req, res) => res.json({ status: "OK" }));
 
+// --- LIVE BUOY SCRAPER (Sensor Fusion) ---
+const scrapeBuoy = async (stationUrl) => {
+  try {
+    const res = await axios.get(stationUrl, { timeout: 4000 });
+    // Bramblemet/Chimet often embed JSON in their pages or serve simple XML/JSON
+    // This regex looks for the specific standard data pattern used by Solentmet sites
+    const windMatch = res.data.match(/Avg Wind.*?(\d+\.?\d*)\s*kn/i);
+    const dirMatch = res.data.match(/Wind Dir.*?(\d+)/i);
+    
+    if (windMatch && dirMatch) {
+      return { 
+        wind_speed: parseFloat(windMatch[1]), 
+        wind_direction: parseInt(dirMatch[1]),
+        is_live: true 
+      };
+    }
+    return null;
+  } catch (e) { return null; }
+};
+
 app.get(['/api/solent', '/api/weather/solent'], async (req, res) => {
   const mult = await getWindMultiplier();
-  const now = Date.now();
-  if (weatherCache.data && now < weatherCache.expiry) {
-    return res.json({ ...weatherCache.data, source: weatherCache.data.source + " (Cached)" });
-  }
+  let weatherData = { current: { wind_speed_10m: 12, wind_direction_10m: 210, temperature_2m: 15 } };
+  let marineData = { current: { wave_height: 0.3 } };
+  let source = "Safe-Mode";
+
   try {
-    const mbRes = await axios.get(`https://my.meteoblue.com/packages/basic-1h?apikey=${API_KEY}&lat=50.79&lon=-1.10&format=json`, { timeout: 8000 });
-    if (mbRes.data && mbRes.data.data_1h) {
-      const mb = mbRes.data.data_1h;
-      const weatherData = { current: { wind_speed_10m: mb.windspeed[0] * mult, wind_direction_10m: mb.winddirection[0], temperature_2m: mb.temperature[0] } };
-      const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 5000 }).catch(() => null);
-      const marineData = (mRes && mRes.data && mRes.data.current) ? mRes.data : { current: { wave_height: 0.4 } };
-      weatherCache = { data: { weather: weatherData, marine: marineData, source: `Meteoblue [x${mult}]` }, expiry: now + CACHE_DURATION };
-      return res.json({ ...weatherCache.data, timestamp: new Date().toISOString() });
+    // 1. Attempt Direct Buoy Scrape (Bramblemet Priority)
+    const [bramble, chimet] = await Promise.all([
+      scrapeBuoy('https://www.bramblemet.co.uk'),
+      scrapeBuoy('https://www.chimet.co.uk')
+    ]);
+
+    if (bramble && bramble.is_live) {
+      weatherData.current.wind_speed_10m = bramble.wind_speed * mult;
+      weatherData.current.wind_direction_10m = bramble.wind_direction;
+      source = `Bramblemet (Live) [x${mult}]`;
+    } else if (chimet && chimet.is_live) {
+      weatherData.current.wind_speed_10m = chimet.wind_speed * mult;
+      weatherData.current.wind_direction_10m = chimet.wind_direction;
+      source = `Chimet (Live) [x${mult}]`;
+    } else {
+      // 2. Fallback to Meteoblue Model
+      const mbRes = await axios.get(`https://my.meteoblue.com/packages/basic-1h?apikey=${API_KEY}&lat=50.79&lon=-1.10&format=json`, { timeout: 5000 });
+      if (mbRes.data && mbRes.data.data_1h) {
+        const mb = mbRes.data.data_1h;
+        weatherData.current.wind_speed_10m = mb.windspeed[0] * mult;
+        weatherData.current.wind_direction_10m = mb.winddirection[0];
+        weatherData.current.temperature_2m = mb.temperature[0];
+        source = `Meteoblue (Pro) [x${mult}]`;
+      }
     }
-    throw new Error("Meteoblue Invalid Response");
-  } catch (err) { res.json({ source: "Synthetic", weather: { current: { wind_speed_10m: 12 * mult } } }); }
+
+    // Marine Data (Waves)
+    const mRes = await axios.get('https://marine-api.open-meteo.com/v1/marine?latitude=50.79&longitude=-1.10&current=wave_height&timezone=GMT', { timeout: 5000 }).catch(() => null);
+    if (mRes && mRes.data && mRes.data.current) marineData = mRes.data;
+
+    res.json({ weather: weatherData, marine: marineData, source, timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.json({ source: "Synthetic", weather: { current: { wind_speed_10m: 12 * mult } } });
+  }
 });
 
 app.get(['/api/tides/solent', '/api/tides/portsmouth'], async (req, res) => {
