@@ -12,15 +12,14 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// MIDDLEWARE: Attach the pool to every request
+// Middleware to inject database pool into routes
 app.use((req, res, next) => {
   req.pool = pool;
   next();
 });
 
-// Routes
 const apiRoutes = require('./routes/api');
 app.use('/api', apiRoutes);
 
 const PORT = process.env.PORT || 5222;
-app.listen(PORT, () => console.log(`🚀 GBR 1381 Engine Online on ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 GBR 1381 ONLINE on port ${PORT}`));
