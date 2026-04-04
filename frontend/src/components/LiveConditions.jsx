@@ -12,58 +12,58 @@ export default function LiveConditions() {
   const fetchLiveConditions = async () => {
     setIsLoading(true);
     setApiError(false);
-      try {
-        const [weatherRes, tideRes] = await Promise.all([
-          axios.get(`${API_URL}/solent`),
-          axios.get(`${API_URL}/tides/solent`)
-        ]);
+    try {
+      const [weatherRes, tideRes] = await Promise.all([
+        axios.get(`${API_URL}/solent`),
+        axios.get(`${API_URL}/tides/solent`)
+      ]);
 
-        const data = weatherRes.data || {};
-        const weatherObj = data.weather || {};
-        const current = weatherObj.current || data.current || {};
-        
-        // Absolute safety for wind speed
-        const getVal = (val, fallback) => (val !== undefined && val !== null && !isNaN(Number(val))) ? Number(val) : fallback;
+      const data = weatherRes.data || {};
+      const current = data.current || {};
+      
+      // Safety helper for numbers
+      const getVal = (val, fallback) => (val !== undefined && val !== null && !isNaN(Number(val))) ? Number(val) : fallback;
 
-        const currentWind = getVal(current.wind_speed_10m ?? current.wind_speed, 12);
-        const currentDir = getVal(current.wind_direction_10m ?? current.wind_direction, 210);
-        const currentGust = getVal(current.wind_gusts_10m, currentWind * 1.2);
-        const currentTemp = getVal(current.temperature_2m, 15);
-        const currentHum = getVal(current.relative_humidity_2m, 70);
+      const currentWind = getVal(current.wind_speed_10m, 12);
+      const currentDir = getVal(current.wind_direction_10m, 210);
+      const currentGust = getVal(current.wind_gusts_10m, currentWind * 1.2);
+      const currentTemp = getVal(current.temperature_2m, 15);
+      const currentHum = getVal(current.relative_humidity_2m, 70);
 
-        setWeather({
-          windSpeed: currentWind.toFixed(1),
-          windGust: currentGust.toFixed(1),
-          windDirection: Math.round(currentDir),
-          temp: Math.round(currentTemp),
-          humidity: Math.round(currentHum),
-          source: data.source || "System Default"
-        });
+      setWeather({
+        windSpeed: currentWind.toFixed(1),
+        windGust: currentGust.toFixed(1),
+        windDirection: Math.round(currentDir),
+        temp: Math.round(currentTemp),
+        humidity: Math.round(currentHum),
+        source: data.source || "Solent High-Res"
+      });
 
-        if (tideRes.data?.hourly?.sea_level_height_msl) {
-          const heights = tideRes.data.hourly.sea_level_height_msl;
-          const times = tideRes.data.hourly.time;
-          const list = [];
-          for (let i = 0; i < Math.min(heights.length, 24); i += 6) {
-            const h = getVal(heights[i], 0);
-            list.push({
-              type: i % 12 === 0 ? 'High' : 'Low',
-              time: times[i] ? new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
-              height: h.toFixed(2)
-            });
-          }
-          setTides(list);
-        } else {
-          setTides([]);
+      // Process Tide Data
+      if (tideRes.data?.hourly?.sea_level_height_msl) {
+        const heights = tideRes.data.hourly.sea_level_height_msl;
+        const times = tideRes.data.hourly.time;
+        const list = [];
+        for (let i = 0; i < Math.min(heights.length, 24); i += 6) {
+          const h = getVal(heights[i], 0);
+          list.push({
+            type: i % 12 === 0 ? 'High' : 'Low',
+            time: times[i] ? new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
+            height: h.toFixed(2)
+          });
         }
+        setTides(list);
+      } else {
+        setTides([]);
+      }
     } catch (error) {
       console.error("Telemetry Sync Failed:", error);
       setApiError(true);
-      // CRITICAL FIX: Set a fallback state so the UI doesn't crash on 'null'
+      // Fallback state to prevent UI crash
       setWeather({
         windSpeed: "12.0",
         windGust: "14.4",
-        windDirection: 210,
+        windDirection: 215,
         temp: 15,
         humidity: 70,
         source: "Offline Mode"
@@ -71,7 +71,8 @@ export default function LiveConditions() {
       setTides([]);
     } finally {
       setIsLoading(false);
-    };
+    }
+  };
 
   useEffect(() => {
     fetchLiveConditions();
@@ -79,17 +80,21 @@ export default function LiveConditions() {
     return () => clearInterval(interval);
   }, []);
 
-  if (isLoading && !weather) return <div className="p-6 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase tracking-widest text-center">Syncing Solent Buoys...</div>;
+  if (isLoading && !weather) {
+    return <div className="p-10 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase text-center">Syncing Solent Buoys...</div>;
+  }
+
+  // Safety check if weather is still null after loading
+  if (!weather) return null;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-700">
-      
       <div className="bg-[#1D1B44] text-white p-6 rounded-xl shadow-2xl flex justify-between items-center border-b-4 border-[#ED1C24]">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2">
             <MapPin className="text-[#ED1C24]" /> Solent Live Conditions
           </h2>
-          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Source: {weather?.source || 'Detecting...'}</p>
+          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Source: {weather.source}</p>
         </div>
         <button 
           onClick={fetchLiveConditions}
@@ -100,7 +105,6 @@ export default function LiveConditions() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
         {/* WIND CARD */}
         <div className="bg-white p-8 rounded-xl shadow-xl border-t-4 border-[#1D1B44] flex flex-col items-center text-center">
           <Wind size={48} className="text-[#1D1B44] mb-4" />
@@ -140,7 +144,7 @@ export default function LiveConditions() {
         <div className="bg-white p-6 rounded-xl shadow-xl border-t-4 border-[#1D1B44]">
           <div className="flex items-center gap-2 mb-6 justify-center">
             <Waves size={24} className="text-[#1D1B44]" />
-            <h3 className="text-sm font-black text-[#1D1B44] uppercase italic tracking-tighter">Portsmouth Tides</h3>
+            <h3 className="text-sm font-black text-[#1D1B44] uppercase italic tracking-tighter">Solent Tides</h3>
           </div>
           <div className="space-y-3">
             {tides && tides.length > 0 ? tides.map((tide, index) => (
@@ -156,7 +160,6 @@ export default function LiveConditions() {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
