@@ -2,35 +2,159 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const cheerio = require('cheerio');
+const NodeCache = require('node-cache');
 const router = express.Router();
+
+// Initialize Cache: 300 seconds (5 minutes)
+const buoyCache = new NodeCache({ stdTTL: 300 });
 
 // --- Mock Database Helpers (Keep these!) ---
 const dbPath = path.join(__dirname, '../db.json');
 const readDB = () => {
-    if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ telemetry: [], tuning: [] }, null, 2));
+    if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ telemetry: [], tuning: [], sails: [] }, null, 2));
     return JSON.parse(fs.readFileSync(dbPath));
 };
 const writeDB = (data) => fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
 
-// --- FREE PUBLIC API ROUTES ---
-
-// 1. Open-Meteo Weather (No API Key Required!)
-router.get('/weather/current', async (req, res) => {
+// --- TASK 1: HIGH-RES WEATHER (UK MET OFFICE 2KM) ---
+router.get('/weather', async (req, res) => {
     try {
-        const { lat, lon } = req.query;
-        const response = await axios.get(`https://api.open-meteo.com/v1/forecast`, {
+        const { lat = 50.78, lon = -1.29 } = req.query;
+        
+        const response = await axios.get('https://api.open-meteo.com/v1/forecast', {
             params: {
                 latitude: lat,
                 longitude: lon,
-                current: 'temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
-                wind_speed_unit: 'kn', // Request knots automatically
+                models: 'ukmo_uk_deterministic_2km',
+                hourly: 'wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m',
+                wind_speed_unit: 'kn',
                 timezone: 'Europe/London'
             }
         });
-        res.json(response.data);
+
+        const hourly = response.data.hourly;
+        const formattedData = hourly.time.map((time, index) => ({
+            timestamp: time,
+            windSpeed: hourly.wind_speed_10m[index],
+            windDirection: hourly.wind_direction_10m[index],
+            windGusts: hourly.wind_gusts_10m[index],
+            temp: hourly.temperature_2m[index]
+        }));
+
+        res.json(formattedData);
     } catch (error) {
-        console.error("Open-Meteo Error:", error.message);
-        res.status(500).json({ error: 'Failed to fetch free weather data' });
+        console.error("Open-Meteo High-Res Error:", error.message);
+        res.status(500).json({ error: 'Failed to fetch high-res weather' });
+    }
+});
+
+// --- TASK 2: UKHO ADMIRALTY TIDES ---
+router.get('/tides', async (req, res) => {
+    try {
+        const { station = 'portsmouth' } = req.query;
+        
+        // Station ID Mapping
+        const stationMap = {
+            'portsmouth': '0065',
+            'southampton': '0060',
+            'cowes': '0064'
+        };
+        
+        const stationId = stationMap[station.toLowerCase()] || '0065';
+        const UKHO_KEY = process.env.UKHO_API_KEY;
+
+        if (!UKHO_KEY) {
+            return res.status(500).json({ error: 'UKHO_API_KEY missing in .env' });
+        }
+
+        const response = await axios.get(
+            `https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/${stationId}/TidalEvents`,
+            {
+                headers: { 'Ocp-Apim-Subscription-Key': UKHO_KEY }
+            }
+        );
+
+        // Filter and format the tidal events
+        const events = response.data.map(event => ({
+            time: event.DateTime,
+            height: event.Height.toFixed(2),
+            type: event.EventType // "HighWater" or "LowWater"
+        }));
+
+        res.json({ station, events });
+    } catch (error) {
+        console.error("UKHO Tide Error:", error.message);
+        res.status(500).json({ error: 'Failed to fetch UKHO tidal data' });
+    }
+});
+
+// --- TASK 3: LIVE SOLENT BUOYS (SCRAPING + CACHE) ---
+const fetchBuoyData = async (url, name) => {
+    try {
+        const { data } = await axios.get(url, { 
+            timeout: 5000,
+            headers: { 'User-Agent': 'Mozilla/5.0' } 
+        });
+        const $ = cheerio.load(data);
+        
+        // Bramblemet/Chimet use standard Solentmet selectors
+        const getVal = (label) => {
+            const el = $(`.now_label:contains("${label}")`).next('.now_value');
+            return el.text().trim() || null;
+        };
+        
+        const windRaw = getVal('Avg Wind');
+        const dirRaw = getVal('Wind Dir');
+        const tideRaw = getVal('Tide');
+
+        return {
+            name,
+            url,
+            windSpeed: windRaw ? parseFloat(windRaw.split(' ')[0]) : null,
+            direction: dirRaw ? parseInt(dirRaw) : null,
+            tideHeight: tideRaw ? parseFloat(tideRaw.split(' ')[0]) : null,
+            timestamp: new Date().toISOString()
+        };
+    } catch (err) {
+        console.error(`Error scraping ${name}:`, err.message);
+        return { name, error: 'Offline' };
+    }
+};
+
+router.get('/live-buoys', async (req, res) => {
+    const cacheKey = 'solent_buoys';
+    const cachedData = buoyCache.get(cacheKey);
+
+    if (cachedData) {
+        return res.json({ ...cachedData, source: 'cache' });
+    }
+
+    // Fetch both in parallel
+    const [bramble, chimet] = await Promise.all([
+        fetchBuoyData('https://www.bramblemet.co.uk/', 'Bramblemet'),
+        fetchBuoyData('https://www.chimet.co.uk/', 'Chimet')
+    ]);
+
+    const result = {
+        stations: [bramble, chimet],
+        lastUpdated: new Date().toISOString()
+    };
+
+    buoyCache.set(cacheKey, result);
+    res.json({ ...result, source: 'live' });
+});
+
+// --- KEEP YOUR EXISTING TELEMETRY AND TUNING ROUTES ---
+router.post('/telemetry', (req, res) => {
+    try {
+        const db = readDB();
+        const newEntry = { id: Date.now(), ...req.body };
+        db.telemetry.push(newEntry);
+        writeDB(db);
+        res.status(201).json(newEntry);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update telemetry' });
     }
 });
 
@@ -38,18 +162,14 @@ router.post('/tuning', (req, res) => {
     try {
         const db = readDB();
         const { jibUsed, sessionDurationHours, windCondition } = req.body;
-        
-        // 1. Save the tuning log entry
         const newEntry = { id: Date.now(), timestamp: new Date().toISOString(), ...req.body };
         db.tuning.push(newEntry);
 
-        // 2. Update Sail Hours
         const sail = db.sails.find(s => s.id === jibUsed);
         if (sail) {
             const hours = parseFloat(sessionDurationHours) || 0;
             sail.hours += hours;
-            // If wind is Heavy (17+ kts based on our previous logic), track heavy wear
-            if (windCondition.includes('Heavy')) {
+            if (windCondition && windCondition.includes('Heavy')) {
                 sail.heavyHours += hours;
             }
         }
@@ -61,71 +181,13 @@ router.post('/tuning', (req, res) => {
     }
 });
 
-
-// 2. Open-Meteo Marine API (100% Free Tides - No Scraping!)
-router.get('/tides/portsmouth', async (req, res) => {
+router.get('/history', (req, res) => {
     try {
-        // Portsmouth / Solent coordinates
-        const { lat = 50.8, lon = -1.1 } = req.query;
-        
-        // Fetch 2 days of hourly tide data (No API key required!)
-        const response = await axios.get(`https://marine-api.open-meteo.com/v1/marine`, {
-            params: {
-                latitude: lat,
-                longitude: lon,
-                hourly: 'sea_level_height_msl',
-                timezone: 'Europe/London',
-                forecast_days: 2
-            }
-        });
-
-        const times = response.data.hourly.time;
-        const heights = response.data.hourly.sea_level_height_msl;
-        const extremes = [];
-
-        // Peak-Finding Algorithm: Find local Highs and Lows in the hourly sine wave
-        for (let i = 1; i < times.length - 1; i++) {
-            const prev = heights[i-1];
-            const curr = heights[i];
-            const next = heights[i+1];
-
-            if (curr === null || prev === null || next === null) continue;
-
-            let type = null;
-            // If current height is higher than both previous and next hour = High Tide
-            if (curr > prev && curr >= next) type = 'High';
-            // If current height is lower than both previous and next hour = Low Tide
-            else if (curr < prev && curr <= next) type = 'Low';
-
-            if (type) {
-                const rawTime = times[i]; // Looks like "YYYY-MM-DDTHH:MM"
-                const timeString = rawTime.substring(11, 16); // Extracts just "HH:MM"
-                extremes.push({ 
-                    type, 
-                    time: timeString, 
-                    height: curr.toFixed(1),
-                    rawTime 
-                });
-            }
-        }
-
-        // Filter out tides that already happened earlier today (with a 1-hour grace period)
-        const now = new Date();
-        now.setHours(now.getHours() - 1);
-        const upcomingExtremes = extremes.filter(e => new Date(e.rawTime) >= now);
-
-        // Return the next 4 upcoming tides to the frontend
-        res.json({ extremes: upcomingExtremes.slice(0, 4) });
-
+        const db = readDB();
+        res.json(db.tuning);
     } catch (error) {
-        console.error("Marine API Error:", error.message);
-        res.status(500).json({ error: 'Failed to fetch free tide data' });
+        res.status(500).json({ error: 'Failed to fetch history' });
     }
 });
-
-// --- KEEP YOUR EXISTING TELEMETRY AND TUNING ROUTES BELOW THIS ---
-router.post('/telemetry', (req, res) => { /* ... */ });
-router.post('/tuning', (req, res) => { /* ... */ });
-router.get('/history', (req, res) => { /* ... */ });
 
 module.exports = router;

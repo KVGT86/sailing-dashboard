@@ -9,12 +9,16 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// Mount the high-resolution API routes
+const apiRoutes = require('./routes/api');
+app.use('/api', apiRoutes);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-const API_KEY = "QYHdr2V4cZktJ7nu";
+// const API_KEY = "O";
 
 const initDB = async () => {
   try {
