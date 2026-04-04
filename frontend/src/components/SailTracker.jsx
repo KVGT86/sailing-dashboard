@@ -11,8 +11,11 @@ function UsageHistoryModal({ sail, onClose }) {
     const fetchHistory = async () => {
       try {
         const res = await axios.get(`${API_URL}/sails/${sail.id}/usage`);
-        setHistory(res.data);
-      } catch (e) { console.error("History sync failed"); }
+        setHistory(Array.isArray(res.data) ? res.data : []);
+      } catch (e) { 
+        console.error("History sync failed"); 
+        setHistory([]);
+      }
       finally { setLoading(false); }
     };
     fetchHistory();
@@ -30,14 +33,14 @@ function UsageHistoryModal({ sail, onClose }) {
         </div>
         <div className="mt-6 max-h-[60vh] overflow-y-auto space-y-2 pr-2">
           {loading && <p>Loading history...</p>}
-          {history.map(h => (
+          {Array.isArray(history) && history.map(h => (
             <div key={h.id} className="grid grid-cols-3 gap-4 items-center p-3 bg-slate-50 rounded-lg">
               <span className="font-bold text-xs">{new Date(h.date).toLocaleDateString()}</span>
               <span className="font-black text-center">{h.hours} hrs</span>
               <span className="font-bold text-xs text-right">{h.avg_wind} kts avg</span>
             </div>
           ))}
-          {!loading && history.length === 0 && <p className="text-center py-10 text-slate-400 font-bold italic">No usage logged for this sail.</p>}
+          {!loading && (!Array.isArray(history) || history.length === 0) && <p className="text-center py-10 text-slate-400 font-bold italic">No usage logged for this sail.</p>}
         </div>
       </div>
     </div>

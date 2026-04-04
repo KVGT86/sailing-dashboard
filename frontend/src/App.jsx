@@ -22,9 +22,13 @@ export default function App() {
         axios.get(`${API_URL}/athletes`),
         axios.get(`${API_URL}/sails`)
       ]);
-      setRoster(crewRes.data);
-      setSails(sailRes.data);
-    } catch (error) { console.error("Sync Error:", error); }
+      setRoster(Array.isArray(crewRes.data) ? crewRes.data : []);
+      setSails(Array.isArray(sailRes.data) ? sailRes.data : []);
+    } catch (error) { 
+      console.error("Sync Error:", error); 
+      setRoster([]);
+      setSails([]);
+    }
     finally { setLoading(false); }
   };
 

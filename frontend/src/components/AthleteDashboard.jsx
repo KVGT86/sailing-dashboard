@@ -38,8 +38,10 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
     try {
       // Fetches the saved telemetry from Postgres
       const response = await axios.get(`${API_URL}/history`);
+      const data = Array.isArray(response.data) ? response.data : [];
+      
       // Filter for this specific sailor's logs using name or ID
-      const sailorHistory = response.data
+      const sailorHistory = data
         .filter(log => log.sailor_id === sailor.id || log.sailor_name === sailor.name)
         .map(log => ({ 
           ...log, 
@@ -48,6 +50,7 @@ export default function AthleteDashboard({ sailor, updateProfile }) {
       setHistoryData(sailorHistory);
     } catch (error) { 
       console.error("Could not fetch workload history", error); 
+      setHistoryData([]);
     }
   };
 

@@ -12,8 +12,11 @@ export default function RaceTracker({ activeCrew }) {
   const fetchRaces = async () => {
     try {
       const res = await axios.get(`${API_URL}/races`);
-      setRaces(res.data);
-    } catch (e) { console.error("Race Sync Failed"); }
+      setRaces(Array.isArray(res.data) ? res.data : []);
+    } catch (e) { 
+      console.error("Race Sync Failed"); 
+      setRaces([]);
+    }
     finally { setLoading(false); }
   };
 
