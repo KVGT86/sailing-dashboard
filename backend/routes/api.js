@@ -3,31 +3,52 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const router = express.Router();
 
+const NodeCache = require('node-cache');
+const buoyCache = new NodeCache({ stdTTL: 300 }); // 5 minute cache
+
 // --- HELPER: Bramblemet Live Scraper ---
 const getBramblemet = async () => {
+    const cached = buoyCache.get("bramblemet");
+    if (cached) return cached;
+
     try {
         const { data } = await axios.get('https://www.bramblemet.co.uk/', { 
-            timeout: 3500,
-            headers: { 'User-Agent': 'Mozilla/5.0 (GBR1381-Dashboard)' }
+            timeout: 5000,
+            headers: { 
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              'Accept': 'text/html'
+            }
         });
         const $ = cheerio.load(data);
-        const getVal = (label) => $(`.now_label:contains("${label}")`).next('.now_value').text().trim();
         
-        const speed = parseFloat(getVal('Avg Wind'));
-        const dir = parseInt(getVal('Wind Dir'));
+        // Use more flexible contains selectors for labels
+        const getVal = (label) => {
+          const el = $(`.now_label:contains("${label}")`).next('.now_value');
+          return el.text().trim() || null;
+        };
         
-        if (isNaN(speed) || isNaN(dir)) return null;
+        const windText = getVal('Avg Wind') || getVal('Wind Speed');
+        const dirText = getVal('Wind Dir') || getVal('Wind Direction');
+        const gustText = getVal('Gust');
+        
+        if (!windText || !dirText) return null;
 
-        return {
+        const result = {
             source: "Bramblemet (Live Buoy)",
             current: {
-                wind_speed_10m: speed,
-                wind_direction_10m: dir,
-                wind_gusts_10m: parseFloat(getVal('Gust')) || speed * 1.2,
-                temperature_2m: 15 // Buoy air temp is often static/missing
+                wind_speed_10m: parseFloat(windText.split(' ')[0]),
+                wind_direction_10m: parseInt(dirText),
+                wind_gusts_10m: gustText ? parseFloat(gustText.split(' ')[0]) : parseFloat(windText.split(' ')[0]) * 1.2,
+                temperature_2m: 15
             }
         };
-    } catch (e) { return null; }
+        
+        buoyCache.set("bramblemet", result);
+        return result;
+    } catch (e) { 
+        console.error("Bramblemet scrape failed:", e.message);
+        return null; 
+    }
 };
 
 // --- 1. WEATHER & SOLENT TELEMETRY ---
@@ -37,12 +58,12 @@ router.get(['/solent', '/weather'], async (req, res) => {
         const liveBuoy = await getBramblemet();
         if (liveBuoy) return res.json({ ...liveBuoy, timestamp: new Date().toISOString() });
 
-        // Step B: Fallback to UK Met Office 2km Model
-        const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_ukv&wind_speed_unit=kn&timezone=GMT';
+        // Step B: Fallback to UK Met Office 2km Model (UKMO UKV)
+        const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_uk_deterministic_2km&wind_speed_unit=kn&timezone=GMT';
         const response = await axios.get(omUrl);
         
         return res.json({
-            source: "UK Met Office 2km (UKV)",
+            source: "UK Met Office 2km (UKMO)",
             current: response.data.current,
             timestamp: new Date().toISOString()
         });
