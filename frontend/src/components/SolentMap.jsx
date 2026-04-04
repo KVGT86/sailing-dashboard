@@ -53,17 +53,72 @@ export default function SolentMap() {
     fetchEnv();
   }, []);
 
-  const getTidalVector = () => {
-    if (!tides?.hourly?.sea_level_height_msl) return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0 };
-    const heights = tides.hourly.sea_level_height_msl;
-    const maxIdx = heights.indexOf(Math.max(...heights.slice(0, 24)));
-    if (maxIdx === -1) return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0 };
-    const hwHour = new Date(tides.hourly.time[maxIdx]).getHours();
-    const diff = new Date().getHours() - hwHour;
-    
-    if (diff >= -6 && diff < 0) return { dir: "East (Flood)", color: "#22c55e", lat: 0.005, lng: 0.02, power: 1 };
-    if (diff >= 0 && diff <= 6) return { dir: "West (Ebb)", color: "#3b82f6", lat: -0.005, lng: -0.02, power: 1 };
-    return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0.1 };
+const getTidalVector = () => {
+    // 1. Absolute Guard: If tides isn't a proper array, return Slack immediately
+    const heights = tides?.hourly?.sea_level_height_msl;
+    const times = tides?.hourly?.time;
+
+    if (!Array.isArray(heights) || heights.length === 0) {
+      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0, label: "No Data" };
+    }
+
+    // 2. Find High Water (HW) - Guarded slice to prevent 'e.slice' crash
+    const daySnapshot = heights.slice(0, 24);
+    const maxH = Math.max(...daySnapshot);
+    const maxIdx = heights.indexOf(maxH);
+
+    if (maxIdx === -1 || !times[maxIdx]) {
+      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0 };
+    }
+
+    // 3. Calculate Hours relative to High Water
+    const hwTime = new Date(times[maxIdx]);
+    const now = new Date();
+    // Difference in decimal hours
+    let diff = (now - hwTime) / (1000 * 60 * 60);
+
+    // 4. THE PRO SECRET: Normalize to a 12.4h cycle
+    // This ensures we always compare 'now' to the NEAREST high water
+    while (diff > 6.2) diff -= 12.4;
+    while (diff < -6.2) diff += 12.4;
+
+    // 5. Directional Logic for the Solent (Bursledon/Hamble area)
+    // Flood (Inbound): Roughly HW-6 to HW
+    if (diff >= -6 && diff < -0.5) {
+      return { 
+        dir: "Flood (East)", 
+        label: "FLOODING",
+        color: "#22c55e", 
+        lat: 0.008,   // Offset for map arrow
+        lng: 0.025, 
+        power: 1.2,
+        rotation: 45  // Degrees for CSS transform
+      };
+    }
+
+    // Ebb (Outbound): Roughly HW to HW+6
+    if (diff >= 0.5 && diff <= 6) {
+      return { 
+        dir: "Ebb (West)", 
+        label: "EBBING",
+        color: "#3b82f6", 
+        lat: -0.008, 
+        lng: -0.025, 
+        power: 1.5,
+        rotation: 225 
+      };
+    }
+
+    // Slack Water: The 'Stand' at High or Low water
+    return { 
+      dir: "Slack", 
+      label: "SLACK",
+      color: "#94a3b8", 
+      lat: 0, 
+      lng: 0, 
+      power: 0.1,
+      rotation: 0 
+    };
   };
 
   const flow = getTidalVector();

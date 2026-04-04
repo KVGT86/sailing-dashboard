@@ -27,7 +27,7 @@ export default function DailyBrief() {
         <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Daily Briefing: Top Available Sailors</h3>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {team.slice(0, 6).map((sailor, i) => (
+        {(team || []).slice(0, 6).map((sailor, i) => (
           <div 
             key={sailor.id} 
             className={`p-3 rounded-lg text-center border-2 ${i < 3 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}
