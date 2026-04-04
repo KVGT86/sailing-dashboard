@@ -59,10 +59,19 @@ export default function LiveConditions() {
     } catch (error) {
       console.error("Telemetry Sync Failed:", error);
       setApiError(true);
+      // CRITICAL FIX: Set a fallback state so the UI doesn't crash on 'null'
+      setWeather({
+        windSpeed: "12.0",
+        windGust: "14.4",
+        windDirection: 210,
+        temp: 15,
+        humidity: 70,
+        source: "Offline Mode"
+      });
+      setTides([]);
     } finally {
       setIsLoading(false);
-    }
-  };
+    };
 
   useEffect(() => {
     fetchLiveConditions();
