@@ -52,26 +52,38 @@ const getBramblemet = async () => {
 };
 
 // --- 1. WEATHER & SOLENT TELEMETRY ---
+// --- 1. WEATHER & SOLENT TELEMETRY ---
 router.get(['/solent', '/weather'], async (req, res) => {
     try {
         // Step A: Try Live Buoy first
         const liveBuoy = await getBramblemet();
         if (liveBuoy) return res.json({ ...liveBuoy, timestamp: new Date().toISOString() });
 
-        // Step B: Fallback to UK Met Office 2km Model (UKMO UKV)
-        const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_uk_deterministic_2km&wind_speed_unit=kn&timezone=GMT';
-        const response = await axios.get(omUrl);
+        // Step B: Fallback to UK Met Office 2km Model
+        // (Switched to standard 'ukmo_ukv' alias for better compatibility)
+        const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_ukv&wind_speed_unit=kn&timezone=GMT';
+        
+        const response = await axios.get(omUrl, {
+            timeout: 5000,
+            headers: { 
+                // This stops Open-Meteo from blocking Render as a "bot"
+                'User-Agent': 'GBR1381-Dashboard/1.0 (Contact: team@gbr1381.com)',
+                'Accept': 'application/json'
+            }
+        });
         
         return res.json({
-            source: "UK Met Office 2km (UKMO)",
+            source: "UK Met Office 2km (UKV)",
             current: response.data.current,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
         console.error("Telemetry Error:", error.message);
-        // Step C: Ultimate Safe Mode (matches your frontend keys)
+        
+        // Step C: Ultimate Safe Mode (Now with an Error Tracker)
         res.json({ 
-            source: "Safe Mode (Offline)", 
+            source: "Safe Mode", 
+            backend_error: error.message, // <--- THE TRACKING BEACON
             current: { 
                 wind_speed_10m: 12.5, 
                 wind_direction_10m: 225, 
