@@ -4,71 +4,34 @@ import { Wind, Thermometer, Waves, Compass, Droplets, MapPin } from 'lucide-reac
 import { API_URL } from '../config';
 
 export default function LiveConditions() {
-  const [weather, setWeather] = useState(null);
-  const [tides, setTides] = useState(null);
+  const [data, setData] = useState(null);
+  const [tideList, setTideList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [apiError, setApiError] = useState(false);
 
   const fetchLiveConditions = async () => {
     setIsLoading(true);
-    setApiError(false);
     try {
-      const [weatherRes, tideRes] = await Promise.all([
-        axios.get(`${API_URL}/solent`),
-        axios.get(`${API_URL}/tides/solent`)
-      ]);
+      const res = await axios.get(`${API_URL}/solent`);
+      const row = res.data;
+      setData(row);
 
-      const data = weatherRes.data || {};
-      const current = data.current || {};
-      
-      // Safety helper for numbers
-      const getVal = (val, fallback) => (val !== undefined && val !== null && !isNaN(Number(val))) ? Number(val) : fallback;
-
-      const currentWind = getVal(current.wind_speed_10m, 12);
-      const currentDir = getVal(current.wind_direction_10m, 210);
-      const currentGust = getVal(current.wind_gusts_10m, currentWind * 1.2);
-      const currentTemp = getVal(current.temperature_2m, 15);
-      const currentHum = getVal(current.relative_humidity_2m, 70);
-
-      setWeather({
-        windSpeed: currentWind.toFixed(1),
-        windGust: currentGust.toFixed(1),
-        windDirection: Math.round(currentDir),
-        temp: Math.round(currentTemp),
-        humidity: Math.round(currentHum),
-        source: data.source || "Solent High-Res"
-      });
-
-      // Process Tide Data
-      if (tideRes.data?.hourly?.sea_level_height_msl) {
-        const heights = tideRes.data.hourly.sea_level_height_msl;
-        const times = tideRes.data.hourly.time;
+      // Process Tide Data from JSONB field
+      if (row.tide_data?.hourly?.sea_level_height_msl) {
+        const heights = row.tide_data.hourly.sea_level_height_msl;
+        const times = row.tide_data.hourly.time;
         const list = [];
+        // Show every 6th hour for the next 24 hours
         for (let i = 0; i < Math.min(heights.length, 24); i += 6) {
-          const h = getVal(heights[i], 0);
           list.push({
             type: i % 12 === 0 ? 'High' : 'Low',
             time: times[i] ? new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
-            height: h.toFixed(2)
+            height: heights[i]?.toFixed(2) || '0.00'
           });
         }
-        setTides(list);
-      } else {
-        setTides([]);
+        setTideList(list);
       }
     } catch (error) {
       console.error("Telemetry Sync Failed:", error);
-      setApiError(true);
-      // Fallback state to prevent UI crash
-      setWeather({
-        windSpeed: "12.0",
-        windGust: "14.4",
-        windDirection: 215,
-        temp: 15,
-        humidity: 70,
-        source: "Offline Mode"
-      });
-      setTides([]);
     } finally {
       setIsLoading(false);
     }
@@ -80,84 +43,79 @@ export default function LiveConditions() {
     return () => clearInterval(interval);
   }, []);
 
-  if (isLoading && !weather) {
-    return <div className="p-10 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase text-center">Syncing Solent Buoys...</div>;
+  if (isLoading && !data) {
+    return <div className="p-10 text-[#1D1B44] font-black text-xl animate-pulse italic uppercase text-center tracking-widest">Accessing Ingestion Mesh...</div>;
   }
 
-  // Safety check if weather is still null after loading
-  if (!weather) return null;
+  if (!data) return null;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-700">
-      <div className="bg-[#1D1B44] text-white p-6 rounded-xl shadow-2xl flex justify-between items-center border-b-4 border-[#ED1C24]">
+      <div className="bg-[#1D1B44] text-white p-6 rounded-3xl shadow-2xl flex justify-between items-center border-b-4 border-cyan-500">
         <div>
           <h2 className="text-2xl font-black uppercase tracking-tighter italic flex items-center gap-2">
-            <MapPin className="text-[#ED1C24]" /> Solent Live Conditions
+            <MapPin className="text-cyan-400" /> Solent Tactical Mesh
           </h2>
-          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Source: {weather.source}</p>
+          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Single Source of Truth • {data.source}</p>
         </div>
         <button 
           onClick={fetchLiveConditions}
-          className="bg-[#ED1C24] hover:bg-white hover:text-[#1D1B44] text-white px-4 py-2 rounded font-black text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95"
+          className="bg-cyan-500 hover:bg-white hover:text-[#1D1B44] text-white px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95"
         >
-          {isLoading ? 'Syncing...' : 'Force Satellite Sync'}
+          {isLoading ? 'Polling...' : 'Refresh Local DB'}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* WIND CARD */}
-        <div className="bg-white p-8 rounded-xl shadow-xl border-t-4 border-[#1D1B44] flex flex-col items-center text-center">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* WIND VELOCITY */}
+        <div className="bg-white p-8 rounded-3xl shadow-xl border-t-8 border-[#1D1B44] flex flex-col items-center text-center">
           <Wind size={48} className="text-[#1D1B44] mb-4" />
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Surface Wind</h3>
-          <div className="text-6xl font-black text-[#1D1B44] my-2 italic">
-            {weather.windSpeed} <span className="text-xl text-slate-400 not-italic uppercase">kts</span>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Wind Velocity</h3>
+          <div className="text-7xl font-black text-[#1D1B44] my-2 italic tracking-tighter">
+            {data.wind_speed?.toFixed(1)} <span className="text-xl text-slate-400 not-italic uppercase">kts</span>
           </div>
-          <div className="flex gap-4 mt-4">
-            <div className="bg-red-50 px-4 py-2 rounded border border-red-100">
-              <span className="block text-[8px] font-black text-[#ED1C24] uppercase">Gusts</span>
-              <span className="font-black text-[#ED1C24] text-lg">{weather.windGust}</span>
+          <div className="flex gap-4 mt-6">
+            <div className="bg-cyan-50 px-6 py-3 rounded-2xl border border-cyan-100 shadow-sm">
+              <span className="block text-[8px] font-black text-cyan-600 uppercase">Gust</span>
+              <span className="font-black text-cyan-700 text-xl">{data.wind_gust?.toFixed(1)}</span>
             </div>
-            <div className="bg-slate-50 px-4 py-2 rounded border border-slate-100 flex items-center gap-3">
+            <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100 flex items-center gap-4 shadow-sm">
               <div className="text-left">
-                <span className="block text-[8px] font-black text-slate-400 uppercase">Dir</span>
-                <span className="font-black text-[#1D1B44] text-lg">{weather.windDirection}°</span>
+                <span className="block text-[8px] font-black text-slate-400 uppercase">Deg</span>
+                <span className="font-black text-[#1D1B44] text-xl">{data.wind_dir}°</span>
               </div>
-              <Compass size={24} className="text-[#1D1B44]" style={{ transform: `rotate(${weather.windDirection}deg)` }} />
+              <Compass size={28} className="text-[#1D1B44] transition-transform duration-1000" style={{ transform: `rotate(${data.wind_dir}deg)` }} />
             </div>
           </div>
         </div>
 
-        {/* ATMOSPHERE CARD */}
-        <div className="bg-white p-8 rounded-xl shadow-xl border-t-4 border-[#ED1C24] flex flex-col items-center text-center">
-          <Thermometer size={48} className="text-[#ED1C24] mb-4" />
+        {/* ATMOSPHERE */}
+        <div className="bg-white p-8 rounded-3xl shadow-xl border-t-8 border-cyan-500 flex flex-col items-center text-center">
+          <Thermometer size={48} className="text-cyan-500 mb-4" />
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Air Temp</h3>
-          <div className="text-6xl font-black text-[#1D1B44] my-2 italic">
-            {weather.temp}°<span className="text-xl text-slate-400 not-italic">C</span>
+          <div className="text-7xl font-black text-[#1D1B44] my-2 italic tracking-tighter">
+            {data.air_temp?.toFixed(1)}°<span className="text-xl text-slate-400 not-italic">C</span>
           </div>
-          <div className="mt-4 bg-blue-50 px-6 py-2 rounded-full border border-blue-100 flex items-center gap-2">
-            <Droplets size={16} className="text-blue-500" />
-            <span className="text-[10px] font-black text-blue-900 uppercase">Humidity: {weather.humidity}%</span>
+          <div className="mt-8 bg-slate-900 text-white px-8 py-3 rounded-full flex items-center gap-3 shadow-lg">
+            <Droplets size={16} className="text-cyan-400" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Humidity: NOMINAL</span>
           </div>
         </div>
 
-        {/* TIDES CARD */}
-        <div className="bg-white p-6 rounded-xl shadow-xl border-t-4 border-[#1D1B44]">
+        {/* TIDES */}
+        <div className="bg-white p-6 rounded-3xl shadow-xl border-t-8 border-[#1D1B44]">
           <div className="flex items-center gap-2 mb-6 justify-center">
             <Waves size={24} className="text-[#1D1B44]" />
-            <h3 className="text-sm font-black text-[#1D1B44] uppercase italic tracking-tighter">Solent Tides</h3>
+            <h3 className="text-sm font-black text-[#1D1B44] uppercase italic tracking-tighter">Tidal Sequence</h3>
           </div>
-          <div className="space-y-3">
-            {tides && tides.length > 0 ? tides.map((tide, index) => (
-              <div key={index} className={`flex justify-between items-center p-3 rounded-lg font-black transition-all ${tide.type === 'High' ? 'bg-[#1D1B44] text-white' : 'bg-slate-100 text-[#1D1B44]'}`}>
-                <span className="text-[10px] uppercase">{tide.type}</span>
-                <span className="text-lg italic">{tide.time}</span>
-                <span className={`text-xs ${tide.type === 'High' ? 'text-[#ED1C24]' : 'text-slate-400'}`}>{tide.height}m</span>
+          <div className="space-y-4">
+            {tideList.map((tide, index) => (
+              <div key={index} className={`flex justify-between items-center p-4 rounded-2xl font-black transition-all ${tide.type === 'High' ? 'bg-[#1D1B44] text-white shadow-lg' : 'bg-slate-50 text-[#1D1B44] border border-slate-100'}`}>
+                <span className="text-[10px] uppercase tracking-widest opacity-60">{tide.type}</span>
+                <span className="text-xl italic">{tide.time}</span>
+                <span className={`text-xs ${tide.type === 'High' ? 'text-cyan-400' : 'text-slate-400'}`}>{tide.height}m</span>
               </div>
-            )) : (
-              <div className="text-center py-10">
-                <p className="text-[10px] font-black text-slate-300 uppercase italic">Check local chart for tide times</p>
-              </div>
-            )}
+            ))}
           </div>
         </div>
       </div>

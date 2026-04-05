@@ -5,7 +5,7 @@ import axios from 'axios';
 import { API_URL } from '../config';
 import L from 'leaflet';
 
-// --- CUSTOM SENSOR NODE ICON (Task 1) ---
+// --- CUSTOM SENSOR NODE ICON ---
 const sensorIcon = L.divIcon({
   className: 'custom-sensor-icon',
   html: `
@@ -28,40 +28,39 @@ const STATIONS = [
   { id: 'GH', name: "Gilkicker", pos: [50.771, -1.141], note: "Portsmouth Node" }
 ];
 
-// --- RACE AREA BOUNDARY (Task 2) ---
 const RACE_AREA = [
-  [50.81, -1.35],
-  [50.81, -1.20],
-  [50.76, -1.20],
-  [50.76, -1.35]
+  [50.81, -1.35], [50.81, -1.20], [50.76, -1.20], [50.76, -1.35]
 ];
 
 export default function SolentMap() {
   const [data, setData] = useState(null);
-  const [tides, setTides] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchEnv = async () => {
       try {
-        const [envRes, tideRes] = await Promise.all([
-          axios.get(`${API_URL}/solent`),
-          axios.get(`${API_URL}/tides/solent`)
-        ]);
-        setData(envRes.data);
-        setTides(tideRes.data);
-      } catch (err) { console.error("Map Sync Failed", err); }
-      finally { setLoading(false); }
+        const res = await axios.get(`${API_URL}/solent`);
+        setData(res.data);
+      } catch (err) { 
+        console.error("Map Sync Failed", err); 
+      } finally { 
+        setLoading(false); 
+      }
     };
     fetchEnv();
+    const interval = setInterval(fetchEnv, 600000); // 10 mins
+    return () => clearInterval(interval);
   }, []);
 
   const getTidalVector = () => {
+    const tides = data?.tide_data;
     const heights = tides?.hourly?.sea_level_height_msl;
     const times = tides?.hourly?.time;
+
     if (!Array.isArray(heights) || heights.length === 0) {
-      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0, label: "DATA OFFLINE" };
+      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, label: "DATA OFFLINE" };
     }
+
     const daySnapshot = heights.slice(0, 24);
     const maxIdx = heights.indexOf(Math.max(...daySnapshot));
     const hwTime = new Date(times[maxIdx]);
@@ -76,18 +75,16 @@ export default function SolentMap() {
   };
 
   const flow = getTidalVector();
-  const currentWind = data?.current?.wind_speed_10m || 12;
-  const currentDir = data?.current?.wind_direction_10m || 215;
+  const currentWind = data?.wind_speed || 12;
+  const currentDir = data?.wind_dir || 215;
 
   const generateTacticalGrid = () => {
     const grid = [];
     const step = 0.02; 
     for (let lat = 50.70; lat <= 50.90; lat += step) {
       for (let lng = -1.60; lng <= -0.90; lng += step) {
-        // Wind Vector (Synoptic White Arrows)
         const rad = (currentDir - 180) * (Math.PI / 180);
         const wEnd = [lat + 0.01 * Math.cos(rad), lng + 0.01 * Math.sin(rad)];
-        
         grid.push({
           pos: [lat, lng],
           windEnd: wEnd,
@@ -101,30 +98,30 @@ export default function SolentMap() {
 
   const grid = generateTacticalGrid();
 
-  if (loading) return <div className="h-[700px] flex items-center justify-center bg-slate-900 text-cyan-400 font-black italic animate-pulse uppercase tracking-[0.3em]">Initialising Tactical War Room...</div>;
+  if (loading && !data) return <div className="h-[750px] flex items-center justify-center bg-[#0b1121] text-cyan-400 font-black italic animate-pulse uppercase tracking-[0.3em]">Syncing Tactical Mesh...</div>;
 
   return (
     <div className="relative group overflow-hidden rounded-3xl border-4 border-slate-800 shadow-2xl">
-      {/* HUD OVERLAY (Task 4) */}
+      {/* HUD OVERLAY */}
       <div className="absolute top-6 left-6 z-[1000] bg-slate-900/95 p-6 rounded-2xl shadow-2xl backdrop-blur-xl border border-white/10 text-white w-64 pointer-events-none">
         <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-2">
             <h3 className="font-black uppercase text-[10px] tracking-widest text-slate-400">Solent Overview</h3>
-            <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+            <span className="flex h-2 w-2 rounded-full bg-cyan-500 animate-pulse"></span>
         </div>
         
         <div className="space-y-4">
             <div>
-                <p className="text-[8px] font-black text-slate-500 uppercase">Primary Data Source</p>
-                <p className="text-xs font-black italic text-cyan-400 uppercase leading-none mt-1">{data?.source || "VTS Southampton"}</p>
+                <p className="text-[8px] font-black text-slate-500 uppercase">Live Telemetry Source</p>
+                <p className="text-xs font-black italic text-cyan-400 uppercase leading-none mt-1">{data?.source || "Ingestion Worker"}</p>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
                 <div>
-                    <p className="text-[8px] font-black text-slate-500 uppercase">Wind Velocity</p>
-                    <p className="text-xl font-black italic text-white leading-none mt-1">{currentWind.toFixed(1)}<span className="text-[8px] ml-1">KTS</span></p>
+                    <p className="text-[8px] font-black text-slate-500 uppercase">Velocity</p>
+                    <p className="text-xl font-black italic text-white leading-none mt-1">{currentWind?.toFixed(1)}<span className="text-[8px] ml-1 uppercase">kts</span></p>
                 </div>
                 <div>
-                    <p className="text-[8px] font-black text-slate-500 uppercase">Direction</p>
+                    <p className="text-[8px] font-black text-slate-500 uppercase">Heading</p>
                     <p className="text-xl font-black italic text-white leading-none mt-1">{currentDir}°</p>
                 </div>
             </div>
@@ -132,13 +129,6 @@ export default function SolentMap() {
             <div className={`p-3 rounded-lg border-l-4 transition-all ${flow.color === '#22c55e' ? 'bg-green-500/10 border-green-500' : 'bg-blue-500/10 border-blue-500'}`}>
                 <p className="text-[8px] font-black text-slate-400 uppercase">Tidal Gate</p>
                 <p className="text-sm font-black italic text-white uppercase mt-1">{flow.label}</p>
-            </div>
-            
-            <div className="pt-2 border-t border-white/5">
-                <div className="flex items-center justify-between text-[8px] font-bold text-slate-500 uppercase">
-                    <span>Wave Height</span>
-                    <span className="text-white">{(data?.marine?.current?.wave_height || 0.3).toFixed(2)}M</span>
-                </div>
             </div>
         </div>
       </div>
@@ -148,11 +138,9 @@ export default function SolentMap() {
           <LayersControl.BaseLayer checked name="Tactical Dark">
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
           </LayersControl.BaseLayer>
-          
           <LayersControl.Overlay checked name="Race Boundary">
             <Polygon positions={RACE_AREA} pathOptions={{ color: '#ED1C24', dashArray: '10, 10', fillColor: '#ED1C24', fillOpacity: 0.05 }} />
           </LayersControl.Overlay>
-
           <LayersControl.Overlay checked name="Wind Flow Vectors">
             <LayerGroup>
               {grid.map((g, i) => (
@@ -160,7 +148,6 @@ export default function SolentMap() {
               ))}
             </LayerGroup>
           </LayersControl.Overlay>
-
           <LayersControl.Overlay checked name="Tidal Heatmap">
             <LayerGroup>
               {grid.map((g, i) => (
@@ -176,9 +163,16 @@ export default function SolentMap() {
         {STATIONS.map(s => (
           <Marker key={s.id} position={s.pos} icon={sensorIcon}>
             <Popup>
-              <div className="p-3 bg-slate-900 text-white rounded-lg">
+              <div className="p-3 bg-slate-900 text-white rounded-lg min-w-[120px]">
                 <h4 className="font-black uppercase text-xs text-cyan-400 border-b border-white/10 pb-1 mb-2">{s.name}</h4>
-                <p className="text-[10px] font-bold text-slate-300">{s.note}</p>
+                <div className="flex justify-between text-[10px] font-bold">
+                   <span className="text-slate-400">Wind:</span>
+                   <span>{currentWind?.toFixed(1)} kts</span>
+                </div>
+                <div className="flex justify-between text-[10px] font-bold">
+                   <span className="text-slate-400">Dir:</span>
+                   <span>{currentDir}°</span>
+                </div>
               </div>
             </Popup>
           </Marker>
