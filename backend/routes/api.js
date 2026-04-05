@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const router = express.Router();
 const NodeCache = require('node-cache');
 
-const buoyCache = new NodeCache({ stdTTL: 300 }); // 5 minute cache
+const buoyCache = new NodeCache({ stdTTL: 600 }); // 10 minute cache
 
 // --- HELPER: Southampton VTS Live Scraper (The Bypass) ---
 const getVTSData = async () => {
@@ -18,32 +18,39 @@ const getVTSData = async () => {
         });
         
         const $ = cheerio.load(data);
-        let speed, gust, dir, temp;
+        
+        // 1. Strip all HTML tags and collapse whitespace into a single text string
+        const bodyText = $('body').text().replace(/\s+/g, ' ');
 
-        $('table').each((i, table) => {
-            const tableText = $(table).text();
-            if (tableText.includes('Bramble Bank')) {
-                const extractNum = (label) => {
-                    const cellText = $(table).find(`td:contains("${label}")`).next('td').text();
-                    const match = cellText.match(/[\d.]+/);
-                    return match ? parseFloat(match[0]) : null;
-                };
+        // 2. Find the Bramble Bank section
+        const brambleIdx = bodyText.indexOf('Bramble Bank');
+        if (brambleIdx === -1) throw new Error("Bramble Bank section not found");
 
-                speed = extractNum('Wind Speed');
-                gust = extractNum('Max Gust');
-                dir = extractNum('Wind Direction');
-                temp = extractNum('Air Temp');
-            }
-        });
+        // 3. Slice out a chunk of text just for Bramble to avoid Sotonmet's numbers
+        const brambleSection = bodyText.substring(brambleIdx, brambleIdx + 500);
 
-        if (speed === null || dir === null) throw new Error("Could not parse VTS table");
+        // 4. Regex sniper to extract the exact numbers
+        const extract = (regex) => {
+            const match = brambleSection.match(regex);
+            return match ? parseFloat(match[1]) : null;
+        };
+
+        const speed = extract(/Wind Speed\s+([\d.]+)\s+Knots/i);
+        const gust = extract(/Max Gust\s+([\d.]+)\s+Knots/i);
+        const dir = extract(/Wind Direction\s+([\d.]+)\s+Degree/i);
+        const temp = extract(/Air Temp\s+([\d.]+)\s+C/i);
+
+        // 5. Strict safety check (catches both null and NaN)
+        if (speed === null || dir === null || isNaN(speed) || isNaN(dir)) {
+            throw new Error("Regex failed to find wind values");
+        }
 
         const result = {
             source: "Bramble Bank (VTS Live)",
             current: {
                 wind_speed_10m: speed,
                 wind_direction_10m: dir,
-                wind_gusts_10m: gust || speed * 1.2,
+                wind_gusts_10m: gust || (speed * 1.2),
                 temperature_2m: temp || 15
             }
         };

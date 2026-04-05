@@ -76,7 +76,7 @@ export default function LiveConditions() {
 
   useEffect(() => {
     fetchLiveConditions();
-    const interval = setInterval(fetchLiveConditions, 300000); // 5 mins
+    const interval = setInterval(fetchLiveConditions, 600000); // 10 mins
     return () => clearInterval(interval);
   }, []);
 
