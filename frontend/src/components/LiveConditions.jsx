@@ -22,10 +22,11 @@ export default function LiveConditions() {
         const list = [];
         // Show every 6th hour for the next 24 hours
         for (let i = 0; i < Math.min(heights.length, 24); i += 6) {
+          const h = Number(heights[i] || 0);
           list.push({
             type: i % 12 === 0 ? 'High' : 'Low',
             time: times[i] ? new Date(times[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
-            height: heights[i]?.toFixed(2) || '0.00'
+            height: h.toFixed(2)
           });
         }
         setTideList(list);
@@ -72,12 +73,12 @@ export default function LiveConditions() {
           <Wind size={48} className="text-[#1D1B44] mb-4" />
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Wind Velocity</h3>
           <div className="text-7xl font-black text-[#1D1B44] my-2 italic tracking-tighter">
-            {data.wind_speed?.toFixed(1)} <span className="text-xl text-slate-400 not-italic uppercase">kts</span>
+            {Number(data.wind_speed || 0).toFixed(1)} <span className="text-xl text-slate-400 not-italic uppercase">kts</span>
           </div>
           <div className="flex gap-4 mt-6">
             <div className="bg-cyan-50 px-6 py-3 rounded-2xl border border-cyan-100 shadow-sm">
               <span className="block text-[8px] font-black text-cyan-600 uppercase">Gust</span>
-              <span className="font-black text-cyan-700 text-xl">{data.wind_gust?.toFixed(1)}</span>
+              <span className="font-black text-cyan-700 text-xl">{Number(data.wind_gust || 0).toFixed(1)}</span>
             </div>
             <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100 flex items-center gap-4 shadow-sm">
               <div className="text-left">
@@ -94,7 +95,7 @@ export default function LiveConditions() {
           <Thermometer size={48} className="text-cyan-500 mb-4" />
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Air Temp</h3>
           <div className="text-7xl font-black text-[#1D1B44] my-2 italic tracking-tighter">
-            {data.air_temp?.toFixed(1)}°<span className="text-xl text-slate-400 not-italic">C</span>
+            {Number(data.air_temp || 0).toFixed(1)}°<span className="text-xl text-slate-400 not-italic">C</span>
           </div>
           <div className="mt-8 bg-slate-900 text-white px-8 py-3 rounded-full flex items-center gap-3 shadow-lg">
             <Droplets size={16} className="text-cyan-400" />

@@ -52,7 +52,7 @@ const runTelemetrySync = async (pool) => {
     // Fallback to UK MO if VTS is down or blocking
     if (!wind || wind.speed === null || isNaN(wind.speed)) {
         try {
-            const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_ukv&wind_speed_unit=kn&timezone=GMT';
+            const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_uk_deterministic_2km&wind_speed_unit=kn&timezone=GMT';
             const { data } = await axios.get(omUrl);
             wind = {
                 speed: data.current.wind_speed_10m,

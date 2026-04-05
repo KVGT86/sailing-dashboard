@@ -9,8 +9,8 @@ app.use(express.json());
 
 // 1. Establish the Database Connection
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@127.0.0.1:5432/your_db_name',
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
 // 2. Inject the pool into every request so the routes can use it

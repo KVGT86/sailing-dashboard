@@ -118,7 +118,7 @@ export default function SolentMap() {
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <p className="text-[8px] font-black text-slate-500 uppercase">Velocity</p>
-                    <p className="text-xl font-black italic text-white leading-none mt-1">{currentWind?.toFixed(1)}<span className="text-[8px] ml-1 uppercase">kts</span></p>
+                    <p className="text-xl font-black italic text-white leading-none mt-1">{Number(currentWind || 0).toFixed(1)}<span className="text-[8px] ml-1 uppercase">kts</span></p>
                 </div>
                 <div>
                     <p className="text-[8px] font-black text-slate-500 uppercase">Heading</p>
@@ -167,7 +167,7 @@ export default function SolentMap() {
                 <h4 className="font-black uppercase text-xs text-cyan-400 border-b border-white/10 pb-1 mb-2">{s.name}</h4>
                 <div className="flex justify-between text-[10px] font-bold">
                    <span className="text-slate-400">Wind:</span>
-                   <span>{currentWind?.toFixed(1)} kts</span>
+                   <span>{Number(currentWind || 0).toFixed(1)} kts</span>
                 </div>
                 <div className="flex justify-between text-[10px] font-bold">
                    <span className="text-slate-400">Dir:</span>
