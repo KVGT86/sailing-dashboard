@@ -2,74 +2,72 @@ const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const router = express.Router();
-
 const NodeCache = require('node-cache');
+
 const buoyCache = new NodeCache({ stdTTL: 300 }); // 5 minute cache
 
-// --- HELPER: Bramblemet Live Scraper ---
-const getBramblemet = async () => {
-    const cached = buoyCache.get("bramblemet");
+// --- HELPER: Southampton VTS Live Scraper (The Bypass) ---
+const getVTSData = async () => {
+    const cached = buoyCache.get("vts_bramble");
     if (cached) return cached;
 
     try {
-        const { data } = await axios.get('https://www.bramblemet.co.uk/', { 
+        const { data } = await axios.get('https://www.southamptonvts.co.uk/live_information/tides_and_weather/', { 
             timeout: 5000,
-            headers: { 
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-              'Accept': 'text/html'
+            headers: { 'User-Agent': 'GBR1381-Dashboard/1.0' }
+        });
+        
+        const $ = cheerio.load(data);
+        let speed, gust, dir, temp;
+
+        $('table').each((i, table) => {
+            const tableText = $(table).text();
+            if (tableText.includes('Bramble Bank')) {
+                const extractNum = (label) => {
+                    const cellText = $(table).find(`td:contains("${label}")`).next('td').text();
+                    const match = cellText.match(/[\d.]+/);
+                    return match ? parseFloat(match[0]) : null;
+                };
+
+                speed = extractNum('Wind Speed');
+                gust = extractNum('Max Gust');
+                dir = extractNum('Wind Direction');
+                temp = extractNum('Air Temp');
             }
         });
-        const $ = cheerio.load(data);
-        
-        // Use more flexible contains selectors for labels
-        const getVal = (label) => {
-          const el = $(`.now_label:contains("${label}")`).next('.now_value');
-          return el.text().trim() || null;
-        };
-        
-        const windText = getVal('Avg Wind') || getVal('Wind Speed');
-        const dirText = getVal('Wind Dir') || getVal('Wind Direction');
-        const gustText = getVal('Gust');
-        
-        if (!windText || !dirText) return null;
+
+        if (speed === null || dir === null) throw new Error("Could not parse VTS table");
 
         const result = {
-            source: "Bramblemet (Live Buoy)",
+            source: "Bramble Bank (VTS Live)",
             current: {
-                wind_speed_10m: parseFloat(windText.split(' ')[0]),
-                wind_direction_10m: parseInt(dirText),
-                wind_gusts_10m: gustText ? parseFloat(gustText.split(' ')[0]) : parseFloat(windText.split(' ')[0]) * 1.2,
-                temperature_2m: 15
+                wind_speed_10m: speed,
+                wind_direction_10m: dir,
+                wind_gusts_10m: gust || speed * 1.2,
+                temperature_2m: temp || 15
             }
         };
         
-        buoyCache.set("bramblemet", result);
+        buoyCache.set("vts_bramble", result);
         return result;
     } catch (e) { 
-        console.error("Bramblemet scrape failed:", e.message);
+        console.error("VTS Scrape failed:", e.message);
         return null; 
     }
 };
 
 // --- 1. WEATHER & SOLENT TELEMETRY ---
-// --- 1. WEATHER & SOLENT TELEMETRY ---
 router.get(['/solent', '/weather'], async (req, res) => {
     try {
-        // Step A: Try Live Buoy first
-        const liveBuoy = await getBramblemet();
+        // Step A: Try Live VTS Scrape first
+        const liveBuoy = await getVTSData();
         if (liveBuoy) return res.json({ ...liveBuoy, timestamp: new Date().toISOString() });
 
-        // Step B: Fallback to UK Met Office 2km Model
-        // (Switched to standard 'ukmo_ukv' alias for better compatibility)
+        // Step B: Fallback to UK Met Office 2km Model (Fixed parameters)
         const omUrl = 'https://api.open-meteo.com/v1/forecast?latitude=50.80&longitude=-1.30&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=ukmo_ukv&wind_speed_unit=kn&timezone=GMT';
-        
         const response = await axios.get(omUrl, {
             timeout: 5000,
-            headers: { 
-                // This stops Open-Meteo from blocking Render as a "bot"
-                'User-Agent': 'GBR1381-Dashboard/1.0 (Contact: team@gbr1381.com)',
-                'Accept': 'application/json'
-            }
+            headers: { 'User-Agent': 'GBR1381-Dashboard/1.0' }
         });
         
         return res.json({
@@ -79,11 +77,10 @@ router.get(['/solent', '/weather'], async (req, res) => {
         });
     } catch (error) {
         console.error("Telemetry Error:", error.message);
-        
-        // Step C: Ultimate Safe Mode (Now with an Error Tracker)
+        // Step C: Ultimate Safe Mode
         res.json({ 
             source: "Safe Mode", 
-            backend_error: error.message, // <--- THE TRACKING BEACON
+            backend_error: error.message,
             current: { 
                 wind_speed_10m: 12.5, 
                 wind_direction_10m: 225, 
