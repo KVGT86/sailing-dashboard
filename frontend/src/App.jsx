@@ -10,6 +10,7 @@ import RaceTracker from './components/RaceTracker';
 import TeamCalendar from './components/TeamCalendar';
 import DailyBrief from './components/DailyBrief';
 import { API_URL } from './config';
+import { Plus, UserPlus } from 'lucide-react';
 
 export default function App() {
   const [roster, setRoster] = useState([]);
@@ -38,39 +39,59 @@ export default function App() {
   const [activeSailor, setActiveSailor] = useState(null);
 
   const activeCrew = roster.filter(s => s.on_boat);
-  const totalWeight = activeCrew.reduce((sum, s) => sum + (s.weight_kg || 0), 0);
 
-  if (loading) return <div className="min-h-screen bg-[#1D1B44] flex items-center justify-center text-white font-black italic uppercase animate-pulse tracking-widest">Initialising GBR 1381 PRO...</div>;
+  const addSailor = async () => {
+    const name = prompt("Enter full name of new athlete:");
+    if (!name) return;
+    try {
+      await axios.post(`${API_URL}/athletes`, { 
+        name, 
+        weight_kg: 75, 
+        height_cm: 180, 
+        rhr: 60, 
+        max_hr: 190, 
+        vo2max: 50,
+        on_boat: false 
+      });
+      fetchData(); // Reload list
+    } catch (e) { alert("Failed to add sailor."); }
+  };
+
+  if (loading) return <div className="min-h-screen bg-[#0b1121] flex items-center justify-center text-cyan-400 font-black italic uppercase animate-pulse tracking-[0.3em]">Deploying GBR 1381 Command...</div>;
 
   return (
-    <div className="bg-slate-100 min-h-screen pb-10">
-      {/* NAVBAR */}
-      <nav className="bg-[#1D1B44] text-white p-4 shadow-2xl flex justify-between items-center border-b-4 border-[#ED1C24] sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-          <div className="bg-white p-1 rounded">
-            <img src="/logo.png" alt="Logo" className="h-8 w-auto object-contain" />
+    <div className="bg-slate-50 min-h-screen pb-10 font-sans selection:bg-cyan-500 selection:text-white">
+      {/* COMMAND NAVBAR */}
+      <nav className="bg-[#1D1B44] text-white p-4 shadow-2xl flex flex-col md:flex-row justify-between items-center border-b-4 border-cyan-500 sticky top-0 z-[1000] backdrop-blur-md bg-opacity-95">
+        <div className="flex items-center gap-4 mb-4 md:mb-0">
+          <div className="bg-white p-1 rounded-lg">
+            <img src="/logo.png" alt="Logo" className="h-10 w-auto object-contain" />
           </div>
           <div>
-            <h1 className="text-xl font-black uppercase italic tracking-tighter leading-none text-white">Lightfoot Racing</h1>
-            <p className="text-[8px] font-black tracking-[0.2em] text-[#ED1C24] uppercase">Grand Prix Performance • GBR 1381</p>
+            <h1 className="text-2xl font-black uppercase italic tracking-tighter leading-none text-white">Lightfoot Tactical</h1>
+            <p className="text-[7px] font-black tracking-[0.4em] text-cyan-400 uppercase mt-1">Onshore Command Center • GBR 1381</p>
           </div>
         </div>
-        <div className="flex gap-4 md:gap-6 text-[10px] font-black uppercase overflow-x-auto no-scrollbar">
+        <div className="flex gap-4 md:gap-8 text-[10px] font-black uppercase overflow-x-auto no-scrollbar pb-2 md:pb-0">
           {['briefing', 'map', 'race', 'guide', 'team', 'sails', 'sailors', 'settings'].map(tab => (
-            <button key={tab} onClick={() => { setActiveTab(tab); setActiveSailor(null); }} className={`transition-all pb-1 border-b-2 ${activeTab === tab ? 'text-[#ED1C24] border-[#ED1C24]' : 'text-slate-400 border-transparent hover:text-white hover:border-slate-500'}`}>
+            <button 
+              key={tab} 
+              onClick={() => { setActiveTab(tab); setActiveSailor(null); }} 
+              className={`transition-all pb-1 border-b-4 tracking-widest ${activeTab === tab ? 'text-cyan-400 border-cyan-400' : 'text-slate-400 border-transparent hover:text-white hover:border-slate-500'}`}
+            >
               {tab}
             </button>
           ))}
         </div>
       </nav>
 
-      <main className="container mx-auto mt-6 px-4">
-        {/* TOP BAR */}
-        <div className="bg-white p-4 rounded-xl shadow-lg mb-6 flex items-center justify-between border-l-8 border-[#ED1C24]">
+      <main className="container mx-auto mt-8 px-4 max-w-7xl">
+        {/* SYNOPTIC DAILY BRIEFING */}
+        <div className="bg-white p-6 rounded-3xl shadow-xl mb-8 flex items-center justify-between border-l-[12px] border-cyan-500">
           <DailyBrief />
         </div>
 
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000">
           {activeTab === 'briefing' && <LiveConditions />}
           {activeTab === 'map' && <SolentMap />}
           {activeTab === 'race' && <RaceTracker activeCrew={activeCrew} />}
@@ -80,23 +101,35 @@ export default function App() {
           {activeTab === 'settings' && <Settings roster={roster} />}
 
           {activeTab === 'sailors' && (
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-1 bg-white p-6 rounded-xl shadow-lg border-t-4 border-[#1D1B44]">
-                   <h2 className="text-xl font-black uppercase italic text-[#1D1B44]">Sailor Roster</h2>
-                   <div className="mt-4 space-y-2">
-                     {roster.map(s => (
-                       <button key={s.id} onClick={() => setActiveSailor(s)} className={`w-full text-left p-4 rounded-lg font-black uppercase border-2 transition-all ${activeSailor?.id === s.id ? 'bg-[#ED1C24] text-white border-transparent' : 'bg-slate-50 border-slate-100 hover:border-slate-300'}`}>
-                         {s.name}
-                       </button>
-                     ))}
+             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                <div className="lg:col-span-1 space-y-4">
+                   <div className="bg-white p-6 rounded-3xl shadow-xl border-t-4 border-[#1D1B44]">
+                      <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-lg font-black uppercase italic text-[#1D1B44]">Operatives</h2>
+                        <button onClick={addSailor} className="text-cyan-600 hover:text-cyan-400 transition-colors">
+                          <UserPlus size={20} />
+                        </button>
+                      </div>
+                      <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">
+                        {roster.map(s => (
+                          <button 
+                            key={s.id} 
+                            onClick={() => setActiveSailor(s)} 
+                            className={`w-full text-left p-4 rounded-2xl font-black uppercase text-xs border-2 transition-all ${activeSailor?.id === s.id ? 'bg-[#1D1B44] text-white border-transparent shadow-lg scale-[1.02]' : 'bg-slate-50 border-slate-100 hover:border-cyan-200 text-slate-600'}`}
+                          >
+                            {s.name}
+                          </button>
+                        ))}
+                      </div>
                    </div>
                 </div>
-                <div className="md:col-span-2">
+                <div className="lg:col-span-3">
                   {activeSailor ? (
                     <AthleteDashboard sailor={activeSailor} updateProfile={fetchData} key={activeSailor.id} />
                   ) : (
-                    <div className="h-full flex items-center justify-center bg-white rounded-xl shadow-lg text-slate-400 font-black uppercase italic">
-                      Select a sailor to view profile
+                    <div className="h-[600px] flex flex-col items-center justify-center bg-white rounded-3xl shadow-xl text-slate-300 border-4 border-dashed border-slate-100">
+                      <Activity size={64} className="mb-4 opacity-20" />
+                      <p className="font-black uppercase italic tracking-widest">Select Operative for Full Bio-Technical Scan</p>
                     </div>
                   )}
                 </div>
@@ -105,5 +138,24 @@ export default function App() {
         </div>
       </main>
     </div>
+  );
+}
+
+function Activity({ size, className }) {
+  return (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      width={size} 
+      height={size} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="3" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className={className}
+    >
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+    </svg>
   );
 }

@@ -1,37 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Circle, Rectangle, LayersControl, LayerGroup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon, LayersControl, LayerGroup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { API_URL } from '../config';
-
-// Leaflet fix
 import L from 'leaflet';
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-let DefaultIcon = L.icon({ iconUrl: icon, shadowUrl: iconShadow, iconSize: [25, 41], iconAnchor: [12, 41] });
-L.Marker.prototype.options.icon = DefaultIcon;
 
-const { BaseLayer, Overlay } = LayersControl;
+// --- CUSTOM SENSOR NODE ICON (Task 1) ---
+const sensorIcon = L.divIcon({
+  className: 'custom-sensor-icon',
+  html: `
+    <div class="relative flex items-center justify-center">
+      <div class="absolute h-4 w-4 bg-cyan-400 rounded-full animate-ping opacity-75"></div>
+      <div class="relative h-2 w-2 bg-cyan-500 rounded-full border border-white shadow-[0_0_8px_rgba(6,182,212,0.8)]"></div>
+    </div>
+  `,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10]
+});
 
-// --- ELITE POIs (Solent Sensor Mesh) ---
 const STATIONS = [
-  { id: 'BM', name: "Bramblemet", pos: [50.791, -1.283], note: "Central Solent Buoy" },
-  { id: 'NM', name: "Netley", pos: [50.876, -1.355], note: "North Solent / Southampton Water" },
-  { id: 'CM', name: "Chimet", pos: [50.761, -0.941], note: "East Solent Entrance" },
-  { id: 'SM', name: "Saundersmet", pos: [50.765, -1.301], note: "Cowes Entrance" },
-  { id: 'CS', name: "Calshot", pos: [50.812, -1.311], note: "Coastguard Station" },
-  { id: 'LY', name: "Lymington", pos: [50.755, -1.511], note: "West Solent Platform" },
-  { id: 'GH', name: "Gilkicker", pos: [50.771, -1.141], note: "Portsmouth Entrance" }
+  { id: 'BM', name: "Bramble Bank", pos: [50.791, -1.283], note: "VTS Primary Sensor" },
+  { id: 'NM', name: "Netley", pos: [50.876, -1.355], note: "Upper Solent Node" },
+  { id: 'CM', name: "Chimet", pos: [50.761, -0.941], note: "Eastern Entrance" },
+  { id: 'SM', name: "Saundersmet", pos: [50.765, -1.301], note: "Cowes Deep Water" },
+  { id: 'CS', name: "Calshot", pos: [50.812, -1.311], note: "Entrance Watch" },
+  { id: 'LY', name: "Lymington", pos: [50.755, -1.511], note: "Western Gate" },
+  { id: 'GH', name: "Gilkicker", pos: [50.771, -1.141], note: "Portsmouth Node" }
 ];
 
-function getArrowPoints(start, end, size = 0.002) {
-    const angle = Math.atan2(end[0] - start[0], end[1] - start[1]);
-    return [
-        [end[0] - size * Math.cos(angle - Math.PI/6), end[1] - size * Math.sin(angle - Math.PI/6)],
-        end,
-        [end[0] - size * Math.cos(angle + Math.PI/6), end[1] - size * Math.sin(angle + Math.PI/6)]
-    ];
-}
+// --- RACE AREA BOUNDARY (Task 2) ---
+const RACE_AREA = [
+  [50.81, -1.35],
+  [50.81, -1.20],
+  [50.76, -1.20],
+  [50.76, -1.35]
+];
 
 export default function SolentMap() {
   const [data, setData] = useState(null);
@@ -53,225 +56,134 @@ export default function SolentMap() {
     fetchEnv();
   }, []);
 
-const getTidalVector = () => {
-    // 1. Absolute Guard: If tides isn't a proper array, return Slack immediately
+  const getTidalVector = () => {
     const heights = tides?.hourly?.sea_level_height_msl;
     const times = tides?.hourly?.time;
-
     if (!Array.isArray(heights) || heights.length === 0) {
-      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0, label: "No Data" };
+      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0, label: "DATA OFFLINE" };
     }
-
-    // 2. Find High Water (HW) - Guarded slice to prevent 'e.slice' crash
     const daySnapshot = heights.slice(0, 24);
-    const maxH = Math.max(...daySnapshot);
-    const maxIdx = heights.indexOf(maxH);
-
-    if (maxIdx === -1 || !times[maxIdx]) {
-      return { dir: "Slack", color: "#94a3b8", lat: 0, lng: 0, power: 0 };
-    }
-
-    // 3. Calculate Hours relative to High Water
+    const maxIdx = heights.indexOf(Math.max(...daySnapshot));
     const hwTime = new Date(times[maxIdx]);
     const now = new Date();
-    // Difference in decimal hours
     let diff = (now - hwTime) / (1000 * 60 * 60);
-
-    // 4. THE PRO SECRET: Normalize to a 12.4h cycle
-    // This ensures we always compare 'now' to the NEAREST high water
     while (diff > 6.2) diff -= 12.4;
     while (diff < -6.2) diff += 12.4;
 
-    // 5. Directional Logic for the Solent (Bursledon/Hamble area)
-    // Flood (Inbound): Roughly HW-6 to HW
-    if (diff >= -6 && diff < -0.5) {
-      return { 
-        dir: "Flood (East)", 
-        label: "FLOODING",
-        color: "#22c55e", 
-        lat: 0.008,   // Offset for map arrow
-        lng: 0.025, 
-        power: 1.2,
-        rotation: 45  // Degrees for CSS transform
-      };
-    }
-
-    // Ebb (Outbound): Roughly HW to HW+6
-    if (diff >= 0.5 && diff <= 6) {
-      return { 
-        dir: "Ebb (West)", 
-        label: "EBBING",
-        color: "#3b82f6", 
-        lat: -0.008, 
-        lng: -0.025, 
-        power: 1.5,
-        rotation: 225 
-      };
-    }
-
-    // Slack Water: The 'Stand' at High or Low water
-    return { 
-      dir: "Slack", 
-      label: "SLACK",
-      color: "#94a3b8", 
-      lat: 0, 
-      lng: 0, 
-      power: 0.1,
-      rotation: 0 
-    };
+    if (diff >= -6 && diff < -0.5) return { dir: "Flood", label: "FLOODING", color: "#22c55e", lat: 0.008, lng: 0.025 };
+    if (diff >= 0.5 && diff <= 6) return { dir: "Ebb", label: "EBBING", color: "#3b82f6", lat: -0.008, lng: -0.025 };
+    return { dir: "Slack", label: "SLACK WATER", color: "#94a3b8", lat: 0, lng: 0 };
   };
 
   const flow = getTidalVector();
+  const currentWind = data?.current?.wind_speed_10m || 12;
+  const currentDir = data?.current?.wind_direction_10m || 215;
 
-  // --- GRID GENERATION (High-Res Heatmap Logic) ---
   const generateTacticalGrid = () => {
-    if (!tides || !tides.hourly || flow.lat === 0) return [];
     const grid = [];
-    const step = 0.015; 
-    for (let lat = 50.72; lat <= 50.88; lat += step) {
-      for (let lng = -1.55; lng <= -0.95; lng += step) {
-        let lFlow = { ...flow };
-        let powerMult = 1.0;
+    const step = 0.02; 
+    for (let lat = 50.70; lat <= 50.90; lat += step) {
+      for (let lng = -1.60; lng <= -0.90; lng += step) {
+        // Wind Vector (Synoptic White Arrows)
+        const rad = (currentDir - 180) * (Math.PI / 180);
+        const wEnd = [lat + 0.01 * Math.cos(rad), lng + 0.01 * Math.sin(rad)];
         
-        // Strategic Relief
-        if (lat < 50.75 && lng > -1.25) powerMult = 0.3; // Ryde
-        if (lat > 50.78 && lat < 50.82 && lng > -1.35 && lng < -1.25) powerMult = 0.15; // Bramble
-        if (lat > 50.80 && lng < -1.15) powerMult = 1.4; // Hill Head Channel
-
         grid.push({
           pos: [lat, lng],
-          end: [lat + lFlow.lat * powerMult, lng + lFlow.lng * powerMult],
-          power: powerMult,
-          color: lFlow.color,
-          bounds: [[lat, lng], [lat + step, lng + step]]
+          windEnd: wEnd,
+          tideColor: flow.color,
+          tideOpacity: (Math.abs(flow.lat) > 0 ? 0.15 : 0.05)
         });
       }
     }
     return grid;
   };
 
-  const tacticalGrid = generateTacticalGrid();
-  const currentWind = data?.weather?.current?.wind_speed_10m || 12;
-  const currentDir = data?.weather?.current?.wind_direction_10m || 215;
+  const grid = generateTacticalGrid();
 
-  if (loading) return <div className="h-[650px] flex items-center justify-center bg-slate-900 text-white font-black italic animate-pulse uppercase tracking-widest text-sm">Deploying Solent Tactical Mesh...</div>;
+  if (loading) return <div className="h-[700px] flex items-center justify-center bg-slate-900 text-cyan-400 font-black italic animate-pulse uppercase tracking-[0.3em]">Initialising Tactical War Room...</div>;
 
   return (
-    <div className="space-y-4">
-      <div className="bg-[#1D1B44] p-4 rounded-xl shadow-lg border-b-4 border-red-500 flex justify-between items-center text-white">
-         <div>
-            <h2 className="font-black italic uppercase text-sm tracking-tighter leading-none">Tactical Command Centre</h2>
-            <p className="text-[8px] font-bold text-red-400 uppercase tracking-widest mt-1">GBR 1381 • High-Res Grid</p>
-         </div>
-         <div className="flex gap-6 text-right">
+    <div className="relative group overflow-hidden rounded-3xl border-4 border-slate-800 shadow-2xl">
+      {/* HUD OVERLAY (Task 4) */}
+      <div className="absolute top-6 left-6 z-[1000] bg-slate-900/95 p-6 rounded-2xl shadow-2xl backdrop-blur-xl border border-white/10 text-white w-64 pointer-events-none">
+        <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-2">
+            <h3 className="font-black uppercase text-[10px] tracking-widest text-slate-400">Solent Overview</h3>
+            <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+        </div>
+        
+        <div className="space-y-4">
             <div>
-               <p className="text-[7px] font-black text-slate-400 uppercase">Stream</p>
-               <span className={`text-[10px] font-black italic uppercase ${flow.color === '#22c55e' ? 'text-green-400' : 'text-blue-400'}`}>{flow.dir}</span>
+                <p className="text-[8px] font-black text-slate-500 uppercase">Primary Data Source</p>
+                <p className="text-xs font-black italic text-cyan-400 uppercase leading-none mt-1">{data?.source || "VTS Southampton"}</p>
             </div>
-            <div>
-               <p className="text-[7px] font-black text-slate-400 uppercase">Environment</p>
-               <span className="text-[10px] font-black italic text-blue-400 uppercase">{currentWind.toFixed(1)} KTS @ {currentDir}°</span>
+            
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <p className="text-[8px] font-black text-slate-500 uppercase">Wind Velocity</p>
+                    <p className="text-xl font-black italic text-white leading-none mt-1">{currentWind.toFixed(1)}<span className="text-[8px] ml-1">KTS</span></p>
+                </div>
+                <div>
+                    <p className="text-[8px] font-black text-slate-500 uppercase">Direction</p>
+                    <p className="text-xl font-black italic text-white leading-none mt-1">{currentDir}°</p>
+                </div>
             </div>
-         </div>
-      </div>
 
-      <div className="h-[650px] rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-800 relative group">
-        <MapContainer center={[50.79, -1.20]} zoom={11} scrollWheelZoom={true} className="h-full w-full bg-slate-900">
-          <LayersControl position="bottomright">
-            <BaseLayer checked name="Tactical Dark">
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            </BaseLayer>
-            <BaseLayer name="Navionics Style">
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            </BaseLayer>
-
-            <Overlay checked name="Wind Pressure Map">
-              <LayerGroup>
-                {tacticalGrid.map((g, i) => (
-                  <Rectangle 
-                    key={`w-${i}`} 
-                    bounds={g.bounds} 
-                    pathOptions={{ color: 'transparent', fillColor: '#ED1C24', fillOpacity: (currentWind / 35) * 0.3 }} 
-                  />
-                ))}
-              </LayerGroup>
-            </Overlay>
-
-            <Overlay checked name="Tidal Flow Map">
-              <LayerGroup>
-                {tacticalGrid.map((g, i) => (
-                  <Rectangle 
-                    key={`t-${i}`} 
-                    bounds={g.bounds} 
-                    pathOptions={{ color: 'transparent', fillColor: g.color, fillOpacity: g.power * 0.25 }} 
-                  />
-                ))}
-              </LayerGroup>
-            </Overlay>
-
-            <Overlay checked name="Flow Vectors">
-              <LayerGroup>
-                {tacticalGrid.map((g, i) => {
-                  if (g.power < 0.2) return null;
-                  const arrow = getArrowPoints(g.pos, g.end);
-                  return (
-                    <React.Fragment key={`v-${i}`}>
-                      <Polyline positions={[g.pos, g.end]} pathOptions={{ color: g.color, weight: 3, opacity: 0.6 }} />
-                      <Polyline positions={arrow} pathOptions={{ color: g.color, weight: 3, opacity: 0.6 }} />
-                    </React.Fragment>
-                  );
-                })}
-              </LayerGroup>
-            </Overlay>
-          </LayersControl>
-
-          {/* SENSOR MESH */}
-          {STATIONS.map(s => (
-            <Marker key={s.id} position={s.pos}>
-              <Popup>
-                <div className="p-2 min-w-[140px] text-[#1D1B44]">
-                  <h3 className="font-black uppercase text-xs border-b-2 border-red-500 pb-1 mb-2">{s.name} Station</h3>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold uppercase flex justify-between"><span>Observed:</span> <span className="text-red-600 font-black">{currentWind.toFixed(1)} kts</span></p>
-                    <p className="text-[10px] font-bold uppercase flex justify-between"><span>Heading:</span> <span className="text-blue-600 font-black">{currentDir}°</span></p>
-                  </div>
-                  <p className="mt-3 text-[8px] text-slate-400 font-black uppercase italic leading-tight">{s.note}</p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-
-          {/* GBR 1381 POSITION */}
-          <CircleMarker center={[50.79, -1.10]} radius={10} pathOptions={{ color: '#ffffff', fillColor: '#ED1C24', fillOpacity: 1, weight: 3 }}>
-            <Popup><div className="font-black text-xs uppercase">GBR 1381 // TARGET</div></Popup>
-          </CircleMarker>
-        </MapContainer>
-
-        {/* HUD OVERLAY */}
-        <div className="absolute top-4 left-4 z-[1000] bg-slate-900/90 p-4 rounded-lg shadow-xl backdrop-blur-md border-l-4 border-red-500 text-white text-[10px] w-52 pointer-events-none">
-            <h3 className="font-black uppercase text-slate-400 mb-3 flex justify-between"><span>Tactical Status</span> <span className="text-red-500 animate-pulse">● LIVE</span></h3>
-            <div className="space-y-2">
-                <div className="flex justify-between border-b border-white/10 pb-1">
-                    <span className="text-slate-500 uppercase font-bold">Winning Shore</span>
-                    <span className="font-black text-green-400 uppercase">{currentDir > 200 ? "Island" : "Mainland"}</span>
-                </div>
-                <div className="flex justify-between border-b border-white/10 pb-1">
-                    <span className="text-slate-500 uppercase font-bold">Chop Height</span>
-                    <span className="font-black text-blue-400">{(data?.marine?.current?.wave_height || 0.3).toFixed(2)}m</span>
-                </div>
-                <div className="pt-2">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="h-1 w-4 bg-red-500"></div>
-                        <span className="text-slate-400 uppercase font-bold">Wind Pressure Zones</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="h-1 w-4 bg-blue-500"></div>
-                        <span className="text-slate-400 uppercase font-bold">Tidal Stream Power</span>
-                    </div>
+            <div className={`p-3 rounded-lg border-l-4 transition-all ${flow.color === '#22c55e' ? 'bg-green-500/10 border-green-500' : 'bg-blue-500/10 border-blue-500'}`}>
+                <p className="text-[8px] font-black text-slate-400 uppercase">Tidal Gate</p>
+                <p className="text-sm font-black italic text-white uppercase mt-1">{flow.label}</p>
+            </div>
+            
+            <div className="pt-2 border-t border-white/5">
+                <div className="flex items-center justify-between text-[8px] font-bold text-slate-500 uppercase">
+                    <span>Wave Height</span>
+                    <span className="text-white">{(data?.marine?.current?.wave_height || 0.3).toFixed(2)}M</span>
                 </div>
             </div>
         </div>
       </div>
+
+      <MapContainer center={[50.79, -1.25]} zoom={11} className="h-[750px] w-full bg-[#0b1121]">
+        <LayersControl position="bottomright">
+          <LayersControl.BaseLayer checked name="Tactical Dark">
+            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+          </LayersControl.BaseLayer>
+          
+          <LayersControl.Overlay checked name="Race Boundary">
+            <Polygon positions={RACE_AREA} pathOptions={{ color: '#ED1C24', dashArray: '10, 10', fillColor: '#ED1C24', fillOpacity: 0.05 }} />
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay checked name="Wind Flow Vectors">
+            <LayerGroup>
+              {grid.map((g, i) => (
+                <Polyline key={`w-${i}`} positions={[g.pos, g.windEnd]} pathOptions={{ color: '#ffffff', weight: 1, opacity: 0.2 }} />
+              ))}
+            </LayerGroup>
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay checked name="Tidal Heatmap">
+            <LayerGroup>
+              {grid.map((g, i) => (
+                <Marker key={`t-${i}`} position={g.pos} icon={L.divIcon({
+                  className: 'bg-transparent',
+                  html: `<div style="background-color: ${g.tideColor}; opacity: ${g.tideOpacity}; width: 20px; height: 20px; border-radius: 2px;"></div>`
+                })} />
+              ))}
+            </LayerGroup>
+          </LayersControl.Overlay>
+        </LayersControl>
+
+        {STATIONS.map(s => (
+          <Marker key={s.id} position={s.pos} icon={sensorIcon}>
+            <Popup>
+              <div className="p-3 bg-slate-900 text-white rounded-lg">
+                <h4 className="font-black uppercase text-xs text-cyan-400 border-b border-white/10 pb-1 mb-2">{s.name}</h4>
+                <p className="text-[10px] font-bold text-slate-300">{s.note}</p>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+      </MapContainer>
     </div>
   );
 }
